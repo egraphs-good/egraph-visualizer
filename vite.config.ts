@@ -7,11 +7,8 @@ export default defineConfig({
   plugins: [react()],
   build: {
     lib: {
-      entry: [resolve(__dirname, 'src/App.tsx'), resolve(__dirname, 'src/anywidget.tsx')],
+      entry: [resolve(__dirname, 'src/anywidget.tsx')],
       formats: ['es', ],
-    },
-    rollupOptions: {
-      external: ['react', 'react/jsx-runtime', 'react-dom'],
     },
   },
 

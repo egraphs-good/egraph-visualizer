@@ -5,7 +5,8 @@ import './index.css'
 import {DOMWidgetModel} from '@jupyter-widgets/base'
 
 
-export function ModelApp({model}: {model: DOMWidgetModel}) {
+// eslint-disable-next-line react-refresh/only-export-components
+function ModelApp({model}: {model: DOMWidgetModel}) {
     const egraph = useSyncExternalStore(
         (callback) => {model.on('change:egraph', callback); return () => model.off('change:egraph', callback)},
         () => model.get('egraph'),
