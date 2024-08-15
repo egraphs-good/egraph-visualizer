@@ -8,13 +8,14 @@ on:
 jobs:
   build-and-publish:
     runs-on: ubuntu-latest
-
+    permissions:
+      contents: read
+      id-token: write
     steps:
-    - uses: actions/checkout@v2
-
-    - uses: actions/setup-node@v2
+    - uses: actions/checkout@v4
+    - uses: actions/setup-node@v4
       with:
-        node-version: '22'
+        node-version: '22.x'
         cache: 'yarn'
         registry-url: 'https://npm.pkg.github.com'
     - run: yarn install
@@ -24,3 +25,13 @@ jobs:
       env:
         # Publish with github until I gain access to my npm account
         NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-node@v4
+      with:
+        node-version: '22.x'
+        cache: 'yarn'
+    - run: yarn install
+    - run: yarn lint
