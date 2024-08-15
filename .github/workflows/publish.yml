@@ -17,6 +17,7 @@ jobs:
         node-version: '16'
         cache: 'yarn'
         registry-url: 'https://npm.pkg.github.com'
+    - run: yarn install
     - run: yarn build
     - run: yarn pack -f package.tgz
     - run: npm publish package.tgz # --provenance --access public
