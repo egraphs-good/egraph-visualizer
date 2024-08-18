@@ -23,6 +23,8 @@ const elk = new ELK({
     "elk.direction": "DOWN",
     "elk.portConstraints": "FIXED_SIDE",
     "elk.hierarchyHandling": "INCLUDE_CHILDREN",
+    // "elk.layered.spacing.baseValue": "40",
+    // "elk.layered.nodePlacement.strategy": "NETWORK_SIMPLEX",
   },
 });
 
@@ -43,6 +45,24 @@ type EGraph = {
   root_eclasses: EGraphClassID[];
   class_data: { [id: EGraphClassID]: EGraphClassData };
 };
+
+// https://github.com/vega/editor/blob/8bcc0fc997dbf3bdcecf4584ffd742fc33ddb042/src/features/dataflow/utils/measureText.ts
+
+const ctx = document.createElement("canvas").getContext("2d");
+const fontFamily = "monospace";
+const fontSize = "12px";
+
+ctx!.font = `${fontSize} ${fontFamily}`;
+
+export type Size = { width: number; height: number };
+
+function measureText(label: string): Size {
+  const metrics = ctx!.measureText(label);
+  return {
+    width: metrics.width,
+    height: metrics.actualBoundingBoxAscent + metrics.actualBoundingBoxDescent,
+  };
+}
 
 // We wil convert this to a graph where the id of the nodes are class-{class_id} and node-{node_id}
 // the ID of the edges will be edge-{source_id}-{port-index} and the ports will be port-{source_id}-{port-index}
@@ -67,13 +87,15 @@ function toELKNode(egraph: EGraph): ElkNode {
         const ports = Object.keys(node.children).map((index) => ({
           id: `port-${id}-${index}`,
         }));
+        const size = measureText(node.op);
+        console.log(node.op, size);
         return {
           id: `node-${id}`,
           type: "node",
           parentId: parentID,
           data: { label: node.op, ports },
-          width: 100,
-          height: 50,
+          width: size.width + 8,
+          height: size.height + 8,
           // one port for every index
           ports,
         };
@@ -126,17 +148,16 @@ function toFlowNodes(layout: ElkNode): Node[] {
 
 export function EClassNode({ data }: { data: { port: string; type: string | null } }) {
   return (
-    <div className="px-4 py-2 shadow-md rounded-md border-2 border-stone-400 h-full w-full">
-      <div className="flex justify-center items-center">{data.type}</div>
-      <Handle type="target" id={data.port} position={Position.Top} />
+    <div className="rounded-md border border-dotted border-stone-400 h-full w-full">
+      <Handle type="target" id={data.port} position={Position.Top} className="invisible" />
     </div>
   );
 }
 
 export function ENode({ data }: { data: { label: string; ports: { id: string }[] } }) {
   return (
-    <div className="px-4 py-2 rounded-md border-2 border-stone-400 h-full w-full">
-      <div>{data.label}</div>
+    <div className="p-1 rounded-md border bg-white border-stone-400 h-full w-full">
+      <div style={{ fontFamily, fontSize, lineHeight: fontSize }}>{data.label}</div>
       {data.ports.map(({ id }) => (
         <Handle key={id} type="source" position={Position.Bottom} id={id} style={{ top: 10, background: "#555" }} />
       ))}
