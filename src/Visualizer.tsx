@@ -159,7 +159,7 @@ function LayoutFlow({ egraph }: { egraph: string }) {
   const nodes = useMemo(() => toFlowNodes(layout), [layout]);
   console.log(nodes);
   return (
-    <ReactFlow nodes={nodes} nodeTypes={nodeTypes} edges={edges} fitView>
+    <ReactFlow nodes={nodes} nodeTypes={nodeTypes} edges={edges} fitView minZoom={0.05}>
       <Background />
     </ReactFlow>
   );
