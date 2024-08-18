@@ -72,6 +72,8 @@ function toELKNode(egraph: EGraph): ElkNode {
           type: "node",
           parentId: parentID,
           data: { label: node.op, ports },
+          width: 100,
+          height: 50,
           // one port for every index
           ports,
         };
@@ -104,16 +106,19 @@ function toELKNode(egraph: EGraph): ElkNode {
 
 // This function takes an EGraph and returns an ELK node that can be used to layout the graph.
 function toFlowNodes(layout: ElkNode): Node[] {
-  return layout.children!.flatMap(({ children, x, y, data, id, type }) => [
-    { position: { x, y }, data, id, type } as unknown as Node,
+  console.log(layout);
+  return layout.children!.flatMap(({ children, x, y, data, id, type, height, width }) => [
+    { position: { x, y }, data, id, type, height, width } as unknown as Node,
     ...children!.map(
-      ({ x, y, data, id, type, parentId }) =>
+      ({ x, y, height, width, data, id, type, parentId }) =>
         ({
           data,
           id,
           type,
           parentId,
           position: { x, y },
+          width,
+          height,
         } as unknown as Node)
     ),
   ]);
@@ -121,7 +126,7 @@ function toFlowNodes(layout: ElkNode): Node[] {
 
 export function EClassNode({ data }: { data: { port: string; type: string | null } }) {
   return (
-    <div className="px-4 py-2 shadow-md rounded-md border-2 border-stone-400">
+    <div className="px-4 py-2 shadow-md rounded-md border-2 border-stone-400 h-full w-full">
       <div className="flex justify-center items-center">{data.type}</div>
       <Handle type="target" id={data.port} position={Position.Top} />
     </div>
@@ -130,7 +135,7 @@ export function EClassNode({ data }: { data: { port: string; type: string | null
 
 export function ENode({ data }: { data: { label: string; ports: { id: string }[] } }) {
   return (
-    <div className="px-4 py-2 rounded-md border-2 border-stone-400">
+    <div className="px-4 py-2 rounded-md border-2 border-stone-400 h-full w-full">
       <div>{data.label}</div>
       {data.ports.map(({ id }) => (
         <Handle key={id} type="source" position={Position.Bottom} id={id} style={{ top: 10, background: "#555" }} />
@@ -150,6 +155,7 @@ function LayoutFlow({ egraph }: { egraph: string }) {
   const edges = useMemo(() => elkNode.edges!.map((e) => ({ ...e })), [elkNode]);
   const layoutPromise = useMemo(() => elk.layout(elkNode), [elkNode]);
   const layout = use(layoutPromise);
+  console.log(layout);
   const nodes = useMemo(() => toFlowNodes(layout), [layout]);
   console.log(nodes);
   return (
