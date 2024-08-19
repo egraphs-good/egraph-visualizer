@@ -5,8 +5,22 @@ import "@xyflow/react/dist/style.css";
 import { scheme } from "vega-scale";
 import { ErrorBoundary } from "react-error-boundary";
 import ELK, { ElkExtendedEdge, ElkNode, ElkPrimitiveEdge } from "elkjs/lib/elk.bundled.js";
-import { memo, Suspense, use, useMemo, useState } from "react";
-import { ReactFlow, ReactFlowProvider, Node, Panel, NodeTypes, Position, Handle, Background, MarkerType, Edge } from "@xyflow/react";
+import { memo, startTransition, Suspense, use, useCallback, useEffect, useMemo, useState, useTransition } from "react";
+import {
+  ReactFlow,
+  ReactFlowProvider,
+  Node,
+  Panel,
+  NodeTypes,
+  NodeMouseHandler,
+  Position,
+  Handle,
+  Background,
+  MarkerType,
+  Edge,
+  useNodesInitialized,
+  useReactFlow,
+} from "@xyflow/react";
 
 import "@xyflow/react/dist/style.css";
 
@@ -55,7 +69,7 @@ const colorScheme: Color[] = [...scheme("pastel1"), ...scheme("pastel2")];
 type MyELKNode = Omit<ElkNode, "children"> & {
   children: ({
     type: string;
-    data: { color: string | null; port: string };
+    data: { color: string | null; port: string; class: string };
     children: {
       type: string;
       width: number;
@@ -82,7 +96,7 @@ type MyELKNodeLayedOut = Omit<MyELKNode, "children"> & {
 
 // We wil convert this to a graph where the id of the nodes are class-{class_id} and node-{node_id}
 // the ID of the edges will be edge-{source_id}-{port-index} and the ports will be port-{source_id}-{port-index}
-function toELKNode(egraph: EGraph, outerElem: HTMLDivElement, innerElem: HTMLDivElement): MyELKNode {
+function toELKNode(egraph: EGraph, outerElem: HTMLDivElement, innerElem: HTMLDivElement, selectedNode: EGraphClassID | null): MyELKNode {
   const nodeToClass = new Map<EGraphNodeID, EGraphClassID>();
   const classToNodes = new Map<EGraphClassID, [EGraphNodeID, EGraphNode][]>();
   for (const [id, node] of Object.entries(egraph.nodes)) {
@@ -91,6 +105,27 @@ function toELKNode(egraph: EGraph, outerElem: HTMLDivElement, innerElem: HTMLDiv
       classToNodes.set(node.eclass, []);
     }
     classToNodes.get(node.eclass)!.push([id, node]);
+  }
+  /// filter out to descendants of the selected node
+  if (selectedNode) {
+    const toTraverse = new Set<string>([selectedNode]);
+    const traversed = new Set<string>();
+    while (toTraverse.size > 0) {
+      const current: string = toTraverse.values().next().value;
+      toTraverse.delete(current);
+      traversed.add(current);
+      for (const childNode of classToNodes.get(current)!.flatMap(([, node]) => node.children)) {
+        const childClass = egraph.nodes[childNode].eclass;
+        if (!traversed.has(childClass)) {
+          toTraverse.add(childClass);
+        }
+      }
+    }
+    for (const id of classToNodes.keys()) {
+      if (!traversed.has(id)) {
+        classToNodes.delete(id);
+      }
+    }
   }
 
   const type_to_color = new Map<string | undefined, Color>();
@@ -103,9 +138,8 @@ function toELKNode(egraph: EGraph, outerElem: HTMLDivElement, innerElem: HTMLDiv
   const children = [...classToNodes.entries()].map(([id, nodes]) => {
     return {
       id: `class-${id}`,
-      data: { color: type_to_color.get(egraph.class_data[id]?.type) || null, port: `port-${id}` },
+      data: { color: type_to_color.get(egraph.class_data[id]?.type) || null, port: `port-${id}`, class: id },
       type: "class",
-
       children: nodes.map(([id, node]) => {
         const ports = Object.keys(node.children).map((index) => ({
           id: `port-${id}-${index}`,
@@ -127,19 +161,24 @@ function toELKNode(egraph: EGraph, outerElem: HTMLDivElement, innerElem: HTMLDiv
   });
 
   const edges: ElkPrimitiveEdge[] = Object.entries(egraph.nodes).flatMap(([id, node]) =>
-    [...node.children.entries()].map(([index, childNode]) => {
+    [...node.children.entries()].flatMap(([index, childNode]) => {
       const sourcePort = `port-${id}-${index}`;
       const class_ = nodeToClass.get(childNode)!;
+      if (!classToNodes.has(node.eclass) || !classToNodes.has(class_)) {
+        return [];
+      }
       const targetPort = `port-${class_}`;
-      return {
-        id: `edge-${id}-${index}`,
-        source: `node-${id}`,
-        sourcePort,
-        sourceHandle: sourcePort,
-        target: `class-${class_}`,
-        targetPort,
-        targetHandle: targetPort,
-      };
+      return [
+        {
+          id: `edge-${id}-${index}`,
+          source: `node-${id}`,
+          sourcePort,
+          sourceHandle: sourcePort,
+          target: `class-${class_}`,
+          targetPort,
+          targetHandle: targetPort,
+        },
+      ];
     })
   );
   return {
@@ -201,19 +240,43 @@ const nodeTypes: NodeTypes = {
 
 function LayoutFlow({ egraph, outerElem, innerElem }: { egraph: string; outerElem: HTMLDivElement; innerElem: HTMLDivElement }) {
   const parsedEGraph: EGraph = useMemo(() => JSON.parse(egraph), [egraph]);
-  const elkNode = useMemo(() => toELKNode(parsedEGraph, outerElem, innerElem), [parsedEGraph, outerElem, innerElem]);
+  /// e-class ID we have currently selected
+  const [selectedNode, setSelectedNode] = useState<string | null>(null);
+  const elkNode = useMemo(
+    () => toELKNode(parsedEGraph, outerElem, innerElem, selectedNode),
+    [parsedEGraph, outerElem, innerElem, selectedNode]
+  );
   const edges = useMemo(() => elkNode.edges!.map((e) => ({ ...e })), [elkNode]);
   const layoutPromise = useMemo(() => elk.layout(elkNode) as Promise<MyELKNodeLayedOut>, [elkNode]);
   const layout = use(layoutPromise);
   const nodes = useMemo(() => toFlowNodes(layout), [layout]);
+  const onNodeClick = useCallback(
+    ((_, node) => {
+      if (node.type === "class") {
+        startTransition(() => setSelectedNode(node.data!.class! as string));
+      }
+    }) as NodeMouseHandler,
+    [setSelectedNode]
+  );
+
+  // Fit the view when the nodes are initialized, which happens initially and after a filter
+  const reactFlow = useReactFlow();
+  const nodesInitialized = useNodesInitialized();
+  useEffect(() => {
+    if (nodesInitialized) {
+      reactFlow.fitView({ padding: 0.1 });
+    }
+  }, [reactFlow, nodesInitialized]);
+
   return (
     <ReactFlow
       nodes={nodes}
       nodeTypes={nodeTypes}
       edges={edges as unknown as Edge[]}
-      fitView
       minZoom={0.05}
       defaultEdgeOptions={{ type: "straight", markerEnd: { type: MarkerType.ArrowClosed } }}
+      onNodeClick={onNodeClick}
+      onPaneClick={() => setSelectedNode(null)}
     >
       <Background />
     </ReactFlow>
