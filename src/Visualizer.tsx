@@ -2,10 +2,11 @@
 
 import "@xyflow/react/dist/style.css";
 
+import { scheme } from "vega-scale";
 import { ErrorBoundary } from "react-error-boundary";
 import ELK, { ElkExtendedEdge, ElkNode, ElkPrimitiveEdge } from "elkjs/lib/elk.bundled.js";
 import { memo, Suspense, use, useMemo, useRef, useState } from "react";
-import { ReactFlow, ReactFlowProvider, Node, Panel, Edge, NodeTypes, Position, Handle, Background } from "@xyflow/react";
+import { ReactFlow, ReactFlowProvider, Node, Panel, Edge, NodeTypes, Position, Handle, Background, MarkerType } from "@xyflow/react";
 
 import "@xyflow/react/dist/style.css";
 
@@ -46,15 +47,10 @@ type EGraph = {
   class_data: { [id: EGraphClassID]: EGraphClassData };
 };
 
-// https://github.com/vega/editor/blob/8bcc0fc997dbf3bdcecf4584ffd742fc33ddb042/src/features/dataflow/utils/measureText.ts
-
-const ctx = document.createElement("canvas").getContext("2d");
-const fontFamily = "monospace";
-const fontSize = "12px";
-
-ctx!.font = `${fontSize} ${fontFamily}`;
-
-export type Size = { width: number; height: number };
+type Color = string;
+// Use these color schemes for the nodes
+// https://vega.github.io/vega/docs/schemes/#categorical
+const colorScheme: Color[] = [...scheme("pastel1"), ...scheme("pastel2")];
 
 // We wil convert this to a graph where the id of the nodes are class-{class_id} and node-{node_id}
 // the ID of the edges will be edge-{source_id}-{port-index} and the ports will be port-{source_id}-{port-index}
@@ -69,11 +65,18 @@ function toELKNode(egraph: EGraph, outerElem: HTMLDivElement, innerElem: HTMLDiv
     classToNodes.get(node.eclass)!.push([id, node]);
   }
 
+  const type_to_color = new Map<string | undefined, Color>();
+  for (const { type } of Object.values(egraph.class_data)) {
+    if (!type_to_color.has(type)) {
+      type_to_color.set(type, colorScheme[type_to_color.size % colorScheme.length]);
+    }
+  }
+
   const children = [...classToNodes.entries()].map(([id, nodes]) => {
     const parentID = `class-${id}`;
     return {
       id: parentID,
-      data: { type: egraph.class_data[id].type || null, port: `port-${id}` },
+      data: { color: type_to_color.get(egraph.class_data[id]?.type) || null, port: `port-${id}` },
       type: "class",
       children: nodes.map(([id, node]) => {
         const ports = Object.keys(node.children).map((index) => ({
@@ -138,10 +141,10 @@ function toFlowNodes(layout: ElkNode): Node[] {
   ]);
 }
 
-export function EClassNode({ data }: { data: { port: string; type: string | null } }) {
+export function EClassNode({ data }: { data: { port: string; color: string } }) {
   return (
-    <div className="rounded-md border border-dotted border-stone-400 h-full w-full">
-      <Handle type="target" id={data.port} position={Position.Top} className="invisible" />
+    <div className="rounded-md border border-dotted border-stone-400 h-full w-full" style={{ backgroundColor: data.color }}>
+      <Handle type="target" id={data.port} position={Position.Top} />
     </div>
   );
 }
@@ -160,7 +163,7 @@ export function ENode({
         {data.label}
       </div>
       {data.ports.map(({ id }) => (
-        <Handle key={id} type="source" position={Position.Bottom} id={id} style={{ top: 10, background: "#555" }} />
+        <Handle key={id} type="source" position={Position.Bottom} id={id} />
       ))}
     </div>
   );
@@ -177,9 +180,17 @@ function LayoutFlow({ egraph, outerElem, innerElem }: { egraph: string; outerEle
   const edges = useMemo(() => elkNode.edges!.map((e) => ({ ...e })), [elkNode]);
   const layoutPromise = useMemo(() => elk.layout(elkNode), [elkNode]);
   const layout = use(layoutPromise);
+  console.log(layout);
   const nodes = useMemo(() => toFlowNodes(layout), [layout]);
   return (
-    <ReactFlow nodes={nodes} nodeTypes={nodeTypes} edges={edges} fitView minZoom={0.05}>
+    <ReactFlow
+      nodes={nodes}
+      nodeTypes={nodeTypes}
+      edges={edges}
+      fitView
+      minZoom={0.05}
+      defaultEdgeOptions={{ type: "straight", markerEnd: { type: MarkerType.ArrowClosed } }}
+    >
       <Background />
     </ReactFlow>
   );

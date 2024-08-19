@@ -21,7 +21,8 @@
     "react": "19.0.0-rc-fa6eab58-20240815",
     "react-dom": "19.0.0-rc-fa6eab58-20240815",
     "react-error-boundary": "4.0.13",
-    "react-monaco-editor": "0.56.1"
+    "react-monaco-editor": "0.56.1",
+    "vega-scale": "7.4.1"
   },
   "devDependencies": {
     "@eslint/js": "^9.9.0",
