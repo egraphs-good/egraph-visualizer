@@ -4,7 +4,7 @@ import "@xyflow/react/dist/style.css";
 
 import { ErrorBoundary } from "react-error-boundary";
 import ELK, { ElkExtendedEdge, ElkNode, ElkPrimitiveEdge } from "elkjs/lib/elk.bundled.js";
-import { memo, Suspense, use, useMemo } from "react";
+import { memo, Suspense, use, useMemo, useRef, useState } from "react";
 import { ReactFlow, ReactFlowProvider, Node, Panel, Edge, NodeTypes, Position, Handle, Background } from "@xyflow/react";
 
 import "@xyflow/react/dist/style.css";
@@ -56,17 +56,9 @@ ctx!.font = `${fontSize} ${fontFamily}`;
 
 export type Size = { width: number; height: number };
 
-function measureText(label: string): Size {
-  const metrics = ctx!.measureText(label);
-  return {
-    width: metrics.width,
-    height: metrics.actualBoundingBoxAscent + metrics.actualBoundingBoxDescent,
-  };
-}
-
 // We wil convert this to a graph where the id of the nodes are class-{class_id} and node-{node_id}
 // the ID of the edges will be edge-{source_id}-{port-index} and the ports will be port-{source_id}-{port-index}
-function toELKNode(egraph: EGraph): ElkNode {
+function toELKNode(egraph: EGraph, outerElem: HTMLDivElement, innerElem: HTMLDivElement): ElkNode {
   const nodeToClass = new Map<EGraphNodeID, EGraphClassID>();
   const classToNodes = new Map<EGraphClassID, [EGraphNodeID, EGraphNode][]>();
   for (const [id, node] of Object.entries(egraph.nodes)) {
@@ -87,15 +79,16 @@ function toELKNode(egraph: EGraph): ElkNode {
         const ports = Object.keys(node.children).map((index) => ({
           id: `port-${id}-${index}`,
         }));
-        const size = measureText(node.op);
-        console.log(node.op, size);
+        // compute the size of the text by setting a dummy node element then measureing it
+        innerElem.innerText = node.op;
+        const size = outerElem.getBoundingClientRect();
         return {
           id: `node-${id}`,
           type: "node",
           parentId: parentID,
           data: { label: node.op, ports },
-          width: size.width + 8,
-          height: size.height + 8,
+          width: size.width,
+          height: size.height,
           // one port for every index
           ports,
         };
@@ -128,7 +121,6 @@ function toELKNode(egraph: EGraph): ElkNode {
 
 // This function takes an EGraph and returns an ELK node that can be used to layout the graph.
 function toFlowNodes(layout: ElkNode): Node[] {
-  console.log(layout);
   return layout.children!.flatMap(({ children, x, y, data, id, type, height, width }) => [
     { position: { x, y }, data, id, type, height, width } as unknown as Node,
     ...children!.map(
@@ -154,10 +146,19 @@ export function EClassNode({ data }: { data: { port: string; type: string | null
   );
 }
 
-export function ENode({ data }: { data: { label: string; ports: { id: string }[] } }) {
+export function ENode({
+  data,
+  ...rest
+}: {
+  data: { label: string; ports: { id: string }[] };
+  outerRef?: React.Ref<HTMLDivElement>;
+  innerRef?: React.Ref<HTMLDivElement>;
+}) {
   return (
-    <div className="p-1 rounded-md border bg-white border-stone-400 h-full w-full">
-      <div style={{ fontFamily, fontSize, lineHeight: fontSize }}>{data.label}</div>
+    <div className="p-1 rounded-md border bg-white border-stone-400 h-full w-full" ref={rest?.outerRef}>
+      <div className="font-mono truncate max-w-96" ref={rest?.innerRef}>
+        {data.label}
+      </div>
       {data.ports.map(({ id }) => (
         <Handle key={id} type="source" position={Position.Bottom} id={id} style={{ top: 10, background: "#555" }} />
       ))}
@@ -170,15 +171,13 @@ const nodeTypes: NodeTypes = {
   node: memo(ENode),
 };
 
-function LayoutFlow({ egraph }: { egraph: string }) {
+function LayoutFlow({ egraph, outerElem, innerElem }: { egraph: string; outerElem: HTMLDivElement; innerElem: HTMLDivElement }) {
   const parsedEGraph: EGraph = useMemo(() => JSON.parse(egraph), [egraph]);
-  const elkNode = useMemo(() => toELKNode(parsedEGraph), [parsedEGraph]);
+  const elkNode = useMemo(() => toELKNode(parsedEGraph, outerElem, innerElem), [parsedEGraph, outerElem, innerElem]);
   const edges = useMemo(() => elkNode.edges!.map((e) => ({ ...e })), [elkNode]);
   const layoutPromise = useMemo(() => elk.layout(elkNode), [elkNode]);
   const layout = use(layoutPromise);
-  console.log(layout);
   const nodes = useMemo(() => toFlowNodes(layout), [layout]);
-  console.log(nodes);
   return (
     <ReactFlow nodes={nodes} nodeTypes={nodeTypes} edges={edges} fitView minZoom={0.05}>
       <Background />
@@ -187,14 +186,23 @@ function LayoutFlow({ egraph }: { egraph: string }) {
 }
 
 function Visualizer({ egraph }: { egraph: string }) {
+  const [outerElem, setOuterElem] = useState<HTMLDivElement | null>(null);
+  const [innerElem, setInnerElem] = useState<HTMLDivElement | null>(null);
+
   return (
-    <ReactFlowProvider>
-      <ErrorBoundary fallback={<p>⚠️Something went wrong</p>}>
-        <Suspense fallback={<Panel>Loading...</Panel>}>
-          <LayoutFlow egraph={egraph} />
-        </Suspense>
-      </ErrorBoundary>
-    </ReactFlowProvider>
+    <>
+      {/* Hidden node to measure text size  */}
+      <div className="invisible absolute">
+        <ENode data={{ label: "test", ports: [] }} outerRef={setOuterElem} innerRef={setInnerElem} />
+      </div>
+      <ReactFlowProvider>
+        <ErrorBoundary fallback={<p>⚠️Something went wrong</p>}>
+          <Suspense fallback={<Panel>Loading...</Panel>}>
+            {outerElem && innerElem && <LayoutFlow egraph={egraph} outerElem={outerElem} innerElem={innerElem} />}
+          </Suspense>
+        </ErrorBoundary>
+      </ReactFlowProvider>
+    </>
   );
 }
 
