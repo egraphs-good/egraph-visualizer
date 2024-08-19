@@ -15,19 +15,18 @@ import "@xyflow/react/dist/style.css";
 //
 // - https://www.eclipse.org/elk/reference/algorithms.html
 // - https://www.eclipse.org/elk/reference/options.html
+const layoutOptions = {
+  "elk.algorithm": "layered",
+  "elk.layered.spacing.nodeNodeBetweenLayers": "100",
+  "elk.spacing.nodeNode": "80",
+  "elk.direction": "DOWN",
+  "elk.portConstraints": "FIXED_SIDE",
+  "elk.hierarchyHandling": "INCLUDE_CHILDREN",
+  // "elk.layered.spacing.baseValue": "40",
+  // "elk.layered.nodePlacement.strategy": "NETWORK_SIMPLEX",
+};
 
-const elk = new ELK({
-  defaultLayoutOptions: {
-    "elk.algorithm": "layered",
-    "elk.layered.spacing.nodeNodeBetweenLayers": "100",
-    "elk.spacing.nodeNode": "80",
-    "elk.direction": "DOWN",
-    "elk.portConstraints": "FIXED_SIDE",
-    "elk.hierarchyHandling": "INCLUDE_CHILDREN",
-    // "elk.layered.spacing.baseValue": "40",
-    // "elk.layered.nodePlacement.strategy": "NETWORK_SIMPLEX",
-  },
-});
+const elk = new ELK();
 
 type EGraphNodeID = string;
 type EGraphClassID = string;
@@ -106,6 +105,7 @@ function toELKNode(egraph: EGraph, outerElem: HTMLDivElement, innerElem: HTMLDiv
       id: `class-${id}`,
       data: { color: type_to_color.get(egraph.class_data[id]?.type) || null, port: `port-${id}` },
       type: "class",
+
       children: nodes.map(([id, node]) => {
         const ports = Object.keys(node.children).map((index) => ({
           id: `port-${id}-${index}`,
@@ -144,6 +144,7 @@ function toELKNode(egraph: EGraph, outerElem: HTMLDivElement, innerElem: HTMLDiv
   );
   return {
     id: "--eclipse-layout-kernel-root",
+    layoutOptions,
     children,
     edges: edges as unknown as ElkExtendedEdge[],
   };
@@ -204,7 +205,6 @@ function LayoutFlow({ egraph, outerElem, innerElem }: { egraph: string; outerEle
   const edges = useMemo(() => elkNode.edges!.map((e) => ({ ...e })), [elkNode]);
   const layoutPromise = useMemo(() => elk.layout(elkNode) as Promise<MyELKNodeLayedOut>, [elkNode]);
   const layout = use(layoutPromise);
-  console.log(layout);
   const nodes = useMemo(() => toFlowNodes(layout), [layout]);
   return (
     <ReactFlow
