@@ -72,12 +72,12 @@ const colorScheme: Color[] = [...scheme("pastel1"), ...scheme("pastel2")];
 type MyELKNode = Omit<ElkNode, "children"> & {
   children: ({
     type: string;
-    data: { color: string | null; port: string; class: string };
+    data: { color: string | null; port: string; id: string };
     children: {
       type: string;
       width: number;
       height: number;
-      data: { label: string; ports: { id: string }[] };
+      data: { label: string; ports: { id: string }[]; id: string };
     }[] &
       ElkNode[];
   } & Omit<ElkNode, "children" | "position">)[];
@@ -99,7 +99,12 @@ type MyELKNodeLayedOut = Omit<MyELKNode, "children"> & {
 
 // We wil convert this to a graph where the id of the nodes are class-{class_id} and node-{node_id}
 // the ID of the edges will be edge-{source_id}-{port-index} and the ports will be port-{source_id}-{port-index}
-function toELKNode(egraph: EGraph, outerElem: HTMLDivElement, innerElem: HTMLDivElement, selectedNode: EGraphClassID | null): MyELKNode {
+function toELKNode(
+  egraph: EGraph,
+  outerElem: HTMLDivElement,
+  innerElem: HTMLDivElement,
+  selectedNode: { type: "class" | "node"; id: string } | null
+): MyELKNode {
   const nodeToClass = new Map<EGraphNodeID, EGraphClassID>();
   const classToNodes = new Map<EGraphClassID, [EGraphNodeID, EGraphNode][]>();
   for (const [id, node] of Object.entries(egraph.nodes)) {
@@ -111,7 +116,15 @@ function toELKNode(egraph: EGraph, outerElem: HTMLDivElement, innerElem: HTMLDiv
   }
   /// filter out to descendants of the selected node
   if (selectedNode) {
-    const toTraverse = new Set<string>([selectedNode]);
+    const toTraverse = new Set<string>();
+    if (selectedNode.type === "class") {
+      toTraverse.add(selectedNode.id);
+    } else {
+      const classID = nodeToClass.get(selectedNode.id)!;
+      toTraverse.add(classID);
+      // if we have selected a node, change the e-class to only include the selected node
+      classToNodes.set(classID, [[selectedNode.id, egraph.nodes[selectedNode.id]]]);
+    }
     const traversed = new Set<string>();
     while (toTraverse.size > 0) {
       const current: string = toTraverse.values().next().value;
@@ -141,13 +154,21 @@ function toELKNode(egraph: EGraph, outerElem: HTMLDivElement, innerElem: HTMLDiv
   const children = [...classToNodes.entries()].map(([id, nodes]) => {
     return {
       id: `class-${id}`,
-      data: { color: type_to_color.get(egraph.class_data[id]?.type) || null, port: `port-${id}`, class: id },
+      data: { color: type_to_color.get(egraph.class_data[id]?.type) || null, port: `port-${id}`, id },
+      ports: [
+        {
+          id: `port-${id}`,
+          layoutOptions: {
+            "port.side": "SOUTH",
+          },
+        },
+      ],
       type: "class",
       children: nodes.map(([id, node]) => {
         const ports = Object.keys(node.children).map((index) => ({
           id: `port-${id}-${index}`,
-          properties: {
-            side: "SOUTH",
+          layoutOptions: {
+            "port.side": "SOUTH",
           },
         }));
         // compute the size of the text by setting a dummy node element then measureing it
@@ -156,7 +177,7 @@ function toELKNode(egraph: EGraph, outerElem: HTMLDivElement, innerElem: HTMLDiv
         return {
           id: `node-${id}`,
           type: "node",
-          data: { label: node.op, ports },
+          data: { label: node.op, ports, id },
           width: size.width,
           height: size.height,
           // one port for every index
@@ -170,7 +191,8 @@ function toELKNode(egraph: EGraph, outerElem: HTMLDivElement, innerElem: HTMLDiv
     [...node.children.entries()].flatMap(([index, childNode]) => {
       const sourcePort = `port-${id}-${index}`;
       const class_ = nodeToClass.get(childNode)!;
-      if (!classToNodes.has(node.eclass) || !classToNodes.has(class_)) {
+      // If the target or source class is not in the selected nodes, don't draw the edge
+      if (!classToNodes.get(node.eclass)?.find(([sourceID, _]) => sourceID == id) || !classToNodes.has(class_)) {
         return [];
       }
       const targetPort = `port-${class_}`;
@@ -256,7 +278,7 @@ const nodeTypes: NodeTypes = {
 function LayoutFlow({ egraph, outerElem, innerElem }: { egraph: string; outerElem: HTMLDivElement; innerElem: HTMLDivElement }) {
   const parsedEGraph: EGraph = useMemo(() => JSON.parse(egraph), [egraph]);
   /// e-class ID we have currently selected
-  const [selectedNode, setSelectedNode] = useState<string | null>(null);
+  const [selectedNode, setSelectedNode] = useState<{ type: "class" | "node"; id: string } | null>(null);
   const elkNode = useMemo(() => {
     const r = toELKNode(parsedEGraph, outerElem, innerElem, selectedNode);
     // console.log(JSON.parse(JSON.stringify(r, null, 2)));
@@ -268,9 +290,7 @@ function LayoutFlow({ egraph, outerElem, innerElem }: { egraph: string; outerEle
   const nodes = useMemo(() => toFlowNodes(layout), [layout]);
   const onNodeClick = useCallback(
     ((_, node) => {
-      if (node.type === "class") {
-        startTransition(() => setSelectedNode(node.data!.class! as string));
-      }
+      startTransition(() => setSelectedNode({ type: node.type! as "class" | "node", id: node.data!.id! as string }));
     }) as NodeMouseHandler,
     [setSelectedNode]
   );
