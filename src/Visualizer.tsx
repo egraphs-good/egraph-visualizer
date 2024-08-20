@@ -31,11 +31,14 @@ import "@xyflow/react/dist/style.css";
 // - https://www.eclipse.org/elk/reference/options.html
 const layoutOptions = {
   "elk.algorithm": "layered",
-  "elk.layered.spacing.nodeNodeBetweenLayers": "100",
-  "elk.spacing.nodeNode": "80",
+  // "elk.layered.spacing.nodeNodeBetweenLayers": "100",
+  // "elk.spacing.nodeNode": "80",
   "elk.direction": "DOWN",
   "elk.portConstraints": "FIXED_SIDE",
   "elk.hierarchyHandling": "INCLUDE_CHILDREN",
+  "elk.layered.mergeEdges": "True",
+  "elk.edgeRouting": "SPLINES",
+  "elk.layered.edgeRouting.splines.mode": "CONSERVATIVE_SOFT",
   // "elk.layered.spacing.baseValue": "40",
   // "elk.layered.nodePlacement.strategy": "NETWORK_SIMPLEX",
 };
