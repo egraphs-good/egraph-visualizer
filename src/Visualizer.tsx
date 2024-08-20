@@ -214,7 +214,7 @@ function toFlowNodes(layout: MyELKNodeLayedOut): Node[] {
 export function EClassNode({ data }: { data: { port: string; color: string } }) {
   return (
     <div className="rounded-md border border-dotted border-stone-400 h-full w-full" style={{ backgroundColor: data.color }}>
-      <Handle type="target" id={data.port} position={Position.Top} />
+      <Handle className="top-0 bottom-0 opacity-0  translate-0" type="target" id={data.port} position={Position.Top} />
     </div>
   );
 }
@@ -232,9 +232,16 @@ export function ENode({
       <div className="font-mono truncate max-w-96" ref={rest?.innerRef}>
         {data.label}
       </div>
-      <div className="flex justify-around">
+      {/* Place at bottom of parent so that handles just touch the node */}
+      <div className="flex justify-around absolute bottom-0 w-full">
         {data.ports.map(({ id }) => (
-          <Handle className="relative left-auto transform-none" key={id} type="source" position={Position.Bottom} id={id} />
+          <Handle
+            className="relative left-auto transform-none opacity-0 translate-0"
+            key={id}
+            type="source"
+            position={Position.Bottom}
+            id={id}
+          />
         ))}
       </div>
     </div>
@@ -254,6 +261,7 @@ function LayoutFlow({ egraph, outerElem, innerElem }: { egraph: string; outerEle
     () => toELKNode(parsedEGraph, outerElem, innerElem, selectedNode),
     [parsedEGraph, outerElem, innerElem, selectedNode]
   );
+  }, [parsedEGraph, outerElem, innerElem, selectedNode]);
   const edges = useMemo(() => elkNode.edges!.map((e) => ({ ...e })), [elkNode]);
   const layoutPromise = useMemo(() => elk.layout(elkNode) as Promise<MyELKNodeLayedOut>, [elkNode]);
   const layout = use(layoutPromise);
