@@ -37,8 +37,8 @@ const layoutOptions = {
   "elk.portConstraints": "FIXED_SIDE",
   "elk.hierarchyHandling": "INCLUDE_CHILDREN",
   "elk.layered.mergeEdges": "True",
-  "elk.edgeRouting": "SPLINES",
-  "elk.layered.edgeRouting.splines.mode": "CONSERVATIVE_SOFT",
+  "elk.edgeRouting": "ORTHOGONAL",
+  // "elk.layered.edgeRouting.splines.mode": "CONSERVATIVE_SOFT",
   // "elk.layered.spacing.baseValue": "40",
   // "elk.layered.nodePlacement.strategy": "NETWORK_SIMPLEX",
 };
