@@ -277,7 +277,7 @@ function LayoutFlow({ egraph, outerElem, innerElem }: { egraph: string; outerEle
       nodeTypes={nodeTypes}
       edges={edges as unknown as Edge[]}
       minZoom={0.05}
-      defaultEdgeOptions={{ type: "straight", markerEnd: { type: MarkerType.ArrowClosed } }}
+      defaultEdgeOptions={{ markerEnd: { type: MarkerType.ArrowClosed } }}
       onNodeClick={onNodeClick}
       onPaneClick={() => setSelectedNode(null)}
     >
