@@ -5,7 +5,7 @@ import "@xyflow/react/dist/style.css";
 import { scheme } from "vega-scale";
 import { ErrorBoundary } from "react-error-boundary";
 import ELK, { ElkExtendedEdge, ElkNode, ElkPrimitiveEdge } from "elkjs/lib/elk.bundled.js";
-import { memo, startTransition, Suspense, use, useCallback, useEffect, useMemo, useState, useTransition } from "react";
+import { memo, startTransition, Suspense, use, useCallback, useEffect, useMemo, useState } from "react";
 import {
   ReactFlow,
   ReactFlowProvider,
@@ -257,10 +257,10 @@ function LayoutFlow({ egraph, outerElem, innerElem }: { egraph: string; outerEle
   const parsedEGraph: EGraph = useMemo(() => JSON.parse(egraph), [egraph]);
   /// e-class ID we have currently selected
   const [selectedNode, setSelectedNode] = useState<string | null>(null);
-  const elkNode = useMemo(
-    () => toELKNode(parsedEGraph, outerElem, innerElem, selectedNode),
-    [parsedEGraph, outerElem, innerElem, selectedNode]
-  );
+  const elkNode = useMemo(() => {
+    const r = toELKNode(parsedEGraph, outerElem, innerElem, selectedNode);
+    // console.log(JSON.parse(JSON.stringify(r, null, 2)));
+    return r;
   }, [parsedEGraph, outerElem, innerElem, selectedNode]);
   const edges = useMemo(() => elkNode.edges!.map((e) => ({ ...e })), [elkNode]);
   const layoutPromise = useMemo(() => elk.layout(elkNode) as Promise<MyELKNodeLayedOut>, [elkNode]);
@@ -290,6 +290,7 @@ function LayoutFlow({ egraph, outerElem, innerElem }: { egraph: string; outerEle
       nodeTypes={nodeTypes}
       edges={edges as unknown as Edge[]}
       minZoom={0.05}
+      maxZoom={10}
       defaultEdgeOptions={{ markerEnd: { type: MarkerType.ArrowClosed } }}
       onNodeClick={onNodeClick}
       onPaneClick={() => setSelectedNode(null)}
