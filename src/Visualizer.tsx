@@ -146,6 +146,9 @@ function toELKNode(egraph: EGraph, outerElem: HTMLDivElement, innerElem: HTMLDiv
       children: nodes.map(([id, node]) => {
         const ports = Object.keys(node.children).map((index) => ({
           id: `port-${id}-${index}`,
+          properties: {
+            side: "SOUTH",
+          },
         }));
         // compute the size of the text by setting a dummy node element then measureing it
         innerElem.innerText = node.op;
@@ -229,9 +232,11 @@ export function ENode({
       <div className="font-mono truncate max-w-96" ref={rest?.innerRef}>
         {data.label}
       </div>
-      {data.ports.map(({ id }) => (
-        <Handle key={id} type="source" position={Position.Bottom} id={id} />
-      ))}
+      <div className="flex justify-around">
+        {data.ports.map(({ id }) => (
+          <Handle className="relative left-auto transform-none" key={id} type="source" position={Position.Bottom} id={id} />
+        ))}
+      </div>
     </div>
   );
 }
