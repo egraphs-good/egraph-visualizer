@@ -5,7 +5,10 @@ import "@xyflow/react/dist/style.css";
 import { scheme } from "vega-scale";
 import { ErrorBoundary } from "react-error-boundary";
 import type { EdgeProps, EdgeTypes, NodeProps } from "@xyflow/react";
-import ELK, { ElkExtendedEdge, ElkNode } from "elkjs/lib/elk.bundled.js";
+
+import ELK, { ElkExtendedEdge, ElkNode } from "elkjs/lib/elk-api";
+import ELKWorkerURL from "elkjs/lib/elk-worker?url";
+
 import { memo, startTransition, Suspense, use, useCallback, useEffect, useMemo, useState } from "react";
 import {
   ReactFlow,
@@ -47,8 +50,9 @@ const layoutOptions = {
   // "elk.layered.nodePlacement.strategy": "NETWORK_SIMPLEX",
 };
 
-const elk = new ELK();
-
+const elk = new ELK({
+  workerUrl: ELKWorkerURL,
+});
 type EGraphNodeID = string;
 type EGraphClassID = string;
 type EGraphNode = {
