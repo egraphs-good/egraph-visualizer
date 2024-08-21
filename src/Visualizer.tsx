@@ -14,7 +14,6 @@ import {
   ReactFlow,
   ReactFlowProvider,
   Node,
-  Panel,
   NodeTypes,
   NodeMouseHandler,
   Background,

@@ -2,10 +2,10 @@ import { useState } from "react";
 import "./App.css";
 import Monaco from "./Monaco";
 import Visualizer from "./Visualizer";
-import example from "./example";
+import DefaultCode from "/examples/manual/python-functions.json?raw";
 
 function App() {
-  const [egraph, setEgraph] = useState(example);
+  const [egraph, setEgraph] = useState(DefaultCode);
   return (
     <div className="flex min-h-screen">
       <div className="flex w-1/3 resize-x overflow-auto">

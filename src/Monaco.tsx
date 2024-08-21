@@ -3,13 +3,16 @@
 import { startTransition, use, useEffect, useMemo, useState } from "react";
 import MonacoEditor from "react-monaco-editor";
 
-const modules = {
+const examples = {
   ...import.meta.glob("/examples/egraph-serialize/tests/*.json", { query: "?raw" }),
   ...import.meta.glob("/examples/extraction-gym/data/*/*.json", { query: "?raw" }),
+  ...import.meta.glob("/examples/manual/*.json", { query: "?raw" }),
 };
 
+const defaultExample = "/examples/manual/python-functions.json";
+
 function Monaco({ code, setCode }: { code: string; setCode: (code: string) => void }) {
-  const [selectedPreset, setSelectedPreset] = useState("");
+  const [selectedPreset, setSelectedPreset] = useState(defaultExample);
   const [loadPreset, setLoadPreset] = useState(false);
   const handlePresetChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
     const preset = event.target.value;
@@ -18,7 +21,7 @@ function Monaco({ code, setCode }: { code: string; setCode: (code: string) => vo
       setLoadPreset(true);
     });
   };
-  const presetPromise = useMemo(() => (loadPreset ? modules[selectedPreset]() : null), [selectedPreset, loadPreset]);
+  const presetPromise = useMemo(() => (loadPreset ? examples[selectedPreset]() : null), [selectedPreset, loadPreset]);
   const loadedPreset = presetPromise ? use(presetPromise) : null;
 
   useEffect(() => {
@@ -35,7 +38,7 @@ function Monaco({ code, setCode }: { code: string; setCode: (code: string) => vo
         <option value="" disabled>
           Select a preset
         </option>
-        {Object.keys(modules).map((preset) => (
+        {Object.keys(examples).map((preset) => (
           <option key={preset} value={preset}>
             {preset}
           </option>
