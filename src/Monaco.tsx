@@ -4,9 +4,8 @@ import { startTransition, use, useEffect, useMemo, useState } from "react";
 import MonacoEditor from "react-monaco-editor";
 
 const modules = {
-  ...import.meta.glob("/examples/egraph-serialize/tests/*.json"),
-  ...import.meta.glob("/examples/extraction-gym/data/*/*.json"),
-  ...import.meta.glob("/examples/extraction-gym/test-data/*/*.json"),
+  ...import.meta.glob("/examples/egraph-serialize/tests/*.json", { query: "?raw" }),
+  ...import.meta.glob("/examples/extraction-gym/data/*/*.json", { query: "?raw" }),
 };
 
 function Monaco({ code, setCode }: { code: string; setCode: (code: string) => void }) {
@@ -25,7 +24,8 @@ function Monaco({ code, setCode }: { code: string; setCode: (code: string) => vo
   useEffect(() => {
     if (loadedPreset) {
       startTransition(() => {
-        setCode(JSON.stringify(loadedPreset, null, 2));
+        const codeStr = (loadedPreset as { default: string }).default;
+        setCode(JSON.stringify(JSON.parse(codeStr), null, 2));
         setLoadPreset(false);
       });
     }

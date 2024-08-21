@@ -5,35 +5,52 @@ on:
     branches:
       - main
     tags:
-      - '*'
+      - "*"
 
 jobs:
   build-and-publish:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
     steps:
-    - uses: actions/checkout@v4
-    - uses: actions/setup-node@v4
-      with:
-        node-version: '22.x'
-        cache: 'yarn'
-        registry-url: 'https://npm.pkg.github.com'
-        scope: '@saulshanabrook'
-    - run: yarn install
-    - run: yarn build
-    - run: yarn pack -f package.tgz
-    - uses: softprops/action-gh-release@v2
-      if: startsWith(github.ref, 'refs/tags/')
-      with:
-        files: package.tgz
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.x"
+          cache: "yarn"
+          registry-url: "https://npm.pkg.github.com"
+          scope: "@saulshanabrook"
+      - run: yarn install
+      - run: yarn build
+      - run: yarn pack -f package.tgz
+      - uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          files: package.tgz
+      - name: Setup Pages
+        uses: actions/configure-pages@v4
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          # Upload dist folder
+          path: "./dist"
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
   lint:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
-    - uses: actions/setup-node@v4
-      with:
-        node-version: '22.x'
-        cache: 'yarn'
-    - run: yarn install
-    - run: yarn lint
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.x"
+          cache: "yarn"
+      - run: yarn install
+      - run: yarn lint
