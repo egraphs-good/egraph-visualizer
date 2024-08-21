@@ -23,11 +23,9 @@ function Monaco({ code, setCode }: { code: string; setCode: (code: string) => vo
 
   useEffect(() => {
     if (loadedPreset) {
-      startTransition(() => {
-        const codeStr = (loadedPreset as { default: string }).default;
-        setCode(JSON.stringify(JSON.parse(codeStr), null, 2));
-        setLoadPreset(false);
-      });
+      const codeStr = (loadedPreset as { default: string }).default;
+      setCode(JSON.stringify(JSON.parse(codeStr), null, 2));
+      setLoadPreset(false);
     }
   }, [loadedPreset, setCode, setLoadPreset]);
 
