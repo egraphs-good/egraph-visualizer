@@ -42,10 +42,10 @@ const layoutOptions = {
   "elk.portConstraints": "FIXED_SIDE",
   "elk.hierarchyHandling": "INCLUDE_CHILDREN",
   "elk.layered.mergeEdges": "True",
-  "elk.edgeRouting": "ORTHOGONAL",
+  // "elk.edgeRouting": "SPLINES",
   "elk.layered.nodePlacement.strategy": "NETWORK_SIMPLEX",
 
-  // "elk.layered.edgeRouting.splines.mode": "CONSERVATIVE_SOFT",
+  "elk.layered.edgeRouting.splines.mode": "CONSERVATIVE",
   // "elk.layered.spacing.baseValue": "40",
   // "elk.layered.nodePlacement.strategy": "NETWORK_SIMPLEX",
 };
@@ -57,7 +57,7 @@ type EGraphNodeID = string;
 type EGraphClassID = string;
 type EGraphNode = {
   op: string;
-  children: EGraphNodeID[];
+  children?: EGraphNodeID[];
   eclass: EGraphClassID;
   cost: number;
 };
@@ -145,7 +145,7 @@ function toELKNode(
       const current: string = toTraverse.values().next().value;
       toTraverse.delete(current);
       traversed.add(current);
-      for (const childNode of classToNodes.get(current)!.flatMap(([, node]) => node.children)) {
+      for (const childNode of classToNodes.get(current)!.flatMap(([, node]) => node.children || [])) {
         const childClass = egraph.nodes[childNode].eclass;
         if (!traversed.has(childClass)) {
           toTraverse.add(childClass);
@@ -181,7 +181,7 @@ function toELKNode(
           data: { label: node.op, id },
           width: size.width,
           height: size.height,
-          ports: Object.keys(node.children).map((index) => ({
+          ports: Object.keys(node.children || []).map((index) => ({
             id: `port-${id}-${index}`,
             layoutOptions: {
               "port.side": "SOUTH",
@@ -190,7 +190,7 @@ function toELKNode(
         };
       }),
       edges: nodes.flatMap(([id, node]) =>
-        [...node.children.entries()].map(([index, childNode]) => ({
+        [...(node.children || []).entries()].map(([index, childNode]) => ({
           id: `edge-${id}-${index}`,
           data: { sourceNode: `node-${id}` },
           sources: [`port-${id}-${index}`],
