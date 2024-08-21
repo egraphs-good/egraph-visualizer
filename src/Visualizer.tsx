@@ -4,7 +4,7 @@ import "@xyflow/react/dist/style.css";
 
 import { scheme } from "vega-scale";
 import { ErrorBoundary } from "react-error-boundary";
-import ELK, { ElkExtendedEdge, ElkNode, ElkPrimitiveEdge } from "elkjs/lib/elk.bundled.js";
+import ELK, { ElkNode, ElkPrimitiveEdge } from "elkjs/lib/elk.bundled.js";
 import { memo, startTransition, Suspense, use, useCallback, useEffect, useMemo, useState } from "react";
 import {
   ReactFlow,
@@ -36,8 +36,10 @@ const layoutOptions = {
   "elk.direction": "DOWN",
   "elk.portConstraints": "FIXED_SIDE",
   "elk.hierarchyHandling": "INCLUDE_CHILDREN",
-  "elk.layered.mergeEdges": "True",
+  // "elk.layered.mergeEdges": "True",
   "elk.edgeRouting": "ORTHOGONAL",
+  "elk.layered.nodePlacement.strategy": "NETWORK_SIMPLEX",
+
   // "elk.layered.edgeRouting.splines.mode": "CONSERVATIVE_SOFT",
   // "elk.layered.spacing.baseValue": "40",
   // "elk.layered.nodePlacement.strategy": "NETWORK_SIMPLEX",
@@ -156,12 +158,12 @@ function toELKNode(
       id: `class-${id}`,
       data: { color: type_to_color.get(egraph.class_data[id]?.type) || null, port: `port-${id}`, id },
       ports: [
-        {
-          id: `port-${id}`,
-          layoutOptions: {
-            "port.side": "SOUTH",
-          },
-        },
+        // {
+        //   id: `port-${id}`,
+        //   layoutOptions: {
+        //     "port.side": "NORTH",
+        //   },
+        // },
       ],
       type: "class",
       children: nodes.map(([id, node]) => {
@@ -184,6 +186,29 @@ function toELKNode(
           ports,
         };
       }),
+      edges: nodes.flatMap(([id, node]) =>
+        [...node.children.entries()].flatMap(([index, childNode]) => {
+          const sourcePort = `port-${id}-${index}`;
+          const class_ = nodeToClass.get(childNode)!;
+          // only include if this is a self loop
+          if (class_ != id) {
+            return [];
+          }
+          // If the target or source class is not in the selected nodes, don't draw the edge
+          const targetPort = `port-${class_}`;
+          return [
+            {
+              id: `edge-${id}-${index}`,
+              source: `node-${id}`,
+              sourcePort,
+              sourceHandle: sourcePort,
+              target: `class-${class_}`,
+              targetPort,
+              targetHandle: targetPort,
+            },
+          ];
+        })
+      ),
     };
   });
 
@@ -192,7 +217,11 @@ function toELKNode(
       const sourcePort = `port-${id}-${index}`;
       const class_ = nodeToClass.get(childNode)!;
       // If the target or source class is not in the selected nodes, don't draw the edge
-      if (!classToNodes.get(node.eclass)?.find(([sourceID, _]) => sourceID == id) || !classToNodes.has(class_)) {
+      if (
+        !classToNodes.get(node.eclass)?.find(([sourceID]) => sourceID == id) ||
+        !classToNodes.has(class_) ||
+        class_ == nodeToClass.get(id)
+      ) {
         return [];
       }
       const targetPort = `port-${class_}`;
@@ -213,7 +242,7 @@ function toELKNode(
     id: "--eclipse-layout-kernel-root",
     layoutOptions,
     children,
-    edges: edges as unknown as ElkExtendedEdge[],
+    edges,
   };
 }
 
@@ -233,7 +262,7 @@ function toFlowNodes(layout: MyELKNodeLayedOut): Node[] {
   ]);
 }
 
-export function EClassNode({ data }: { data: { port: string; color: string } }) {
+export function EClassNode({ data }: { data: { port: string; color: string; id: string } }) {
   return (
     <div className="rounded-md border border-dotted border-stone-400 h-full w-full" style={{ backgroundColor: data.color }}>
       <Handle className="top-0 bottom-0 opacity-0  translate-0" type="target" id={data.port} position={Position.Top} />
@@ -245,7 +274,7 @@ export function ENode({
   data,
   ...rest
 }: {
-  data: { label: string; ports: { id: string }[] };
+  data: { label: string; ports: { id: string }[]; id: string };
   outerRef?: React.Ref<HTMLDivElement>;
   innerRef?: React.Ref<HTMLDivElement>;
 }) {
@@ -284,7 +313,10 @@ function LayoutFlow({ egraph, outerElem, innerElem }: { egraph: string; outerEle
     // console.log(JSON.parse(JSON.stringify(r, null, 2)));
     return r;
   }, [parsedEGraph, outerElem, innerElem, selectedNode]);
-  const edges = useMemo(() => elkNode.edges!.map((e) => ({ ...e })), [elkNode]);
+  const edges = useMemo(
+    () => [...elkNode.children.flatMap((c) => c.edges!.map((e) => ({ ...e }))), ...elkNode.edges!.map((e) => ({ ...e }))],
+    [elkNode]
+  );
   const layoutPromise = useMemo(() => elk.layout(elkNode) as Promise<MyELKNodeLayedOut>, [elkNode]);
   const layout = use(layoutPromise);
   const nodes = useMemo(() => toFlowNodes(layout), [layout]);
