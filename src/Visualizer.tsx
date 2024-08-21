@@ -350,7 +350,7 @@ function Visualizer({ egraph }: { egraph: string }) {
       <ReactFlowProvider>
         <ErrorBoundary fallback={<p>⚠️Something went wrong</p>}>
           <Suspense fallback={<div>Laying out graph...</div>}>
-            {outerElem && innerElem && <LayoutFlow egraph={egraph} outerElem={outerElem} innerElem={innerElem} />}
+            {outerElem && innerElem && <LayoutFlow key={egraph} egraph={egraph} outerElem={outerElem} innerElem={innerElem} />}
           </Suspense>
         </ErrorBoundary>
       </ReactFlowProvider>
