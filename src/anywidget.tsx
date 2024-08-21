@@ -1,4 +1,4 @@
-import { StrictMode, useSyncExternalStore } from "react";
+import { useSyncExternalStore } from "react";
 import { createRoot } from "react-dom/client";
 import "./index.css";
 import { DOMWidgetModel } from "@jupyter-widgets/base";
@@ -18,11 +18,7 @@ function ModelApp({ model }: { model: DOMWidgetModel }) {
 
 function render({ model, el }: { el: HTMLElement; model: DOMWidgetModel }) {
   const root = createRoot(el);
-  root.render(
-    <StrictMode>
-      <ModelApp model={model} />
-    </StrictMode>
-  );
+  root.render(<ModelApp model={model} />);
   return () => root.unmount();
 }
 
