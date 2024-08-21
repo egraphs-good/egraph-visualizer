@@ -1,0 +1,6 @@
+[submodule "examples/extraction-gym"]
+	path = examples/extraction-gym
+	url = https://github.com/egraphs-good/extraction-gym
+[submodule "examples/egraph-serialize"]
+	path = examples/egraph-serialize
+	url = https://github.com/egraphs-good/egraph-serialize

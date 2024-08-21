@@ -63,8 +63,8 @@ type EGraphClassData = {
 };
 type EGraph = {
   nodes: { [id: EGraphNodeID]: EGraphNode };
-  root_eclasses: EGraphClassID[];
-  class_data: { [id: EGraphClassID]: EGraphClassData };
+  root_eclasses?: EGraphClassID[];
+  class_data?: { [id: EGraphClassID]: EGraphClassData };
 };
 
 type Color = string;
@@ -154,9 +154,9 @@ function toELKNode(
       }
     }
   }
-
+  const class_data = egraph.class_data || {};
   const type_to_color = new Map<string | undefined, Color>();
-  for (const { type } of Object.values(egraph.class_data)) {
+  for (const { type } of Object.values(class_data)) {
     if (!type_to_color.has(type)) {
       type_to_color.set(type, colorScheme[type_to_color.size % colorScheme.length]);
     }
@@ -165,7 +165,7 @@ function toELKNode(
   const children = [...classToNodes.entries()].map(([id, nodes]) => {
     return {
       id: `class-${id}`,
-      data: { color: type_to_color.get(egraph.class_data[id]?.type) || null, port: `port-${id}`, id },
+      data: { color: type_to_color.get(class_data[id]?.type) || null, port: `port-${id}`, id },
       type: "class" as const,
       children: nodes.map(([id, node]) => {
         // compute the size of the text by setting a dummy node element then measureing it
