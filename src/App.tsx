@@ -2,7 +2,7 @@ import { useState } from "react";
 import "./App.css";
 import Monaco from "./Monaco";
 import Visualizer from "./Visualizer";
-import DefaultCode from "/examples/manual/python-functions.json?raw";
+import DefaultCode from "/examples/manual/homepage.json?raw";
 
 function App() {
   const [egraph, setEgraph] = useState(DefaultCode);

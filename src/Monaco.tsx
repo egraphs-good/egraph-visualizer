@@ -9,7 +9,7 @@ const examples = {
   ...import.meta.glob("/examples/manual/*.json", { query: "?raw" }),
 };
 
-const defaultExample = "/examples/manual/python-functions.json";
+const defaultExample = "/examples/manual/homepage.json";
 
 function Monaco({ code, setCode }: { code: string; setCode: (code: string) => void }) {
   const [selectedPreset, setSelectedPreset] = useState(defaultExample);

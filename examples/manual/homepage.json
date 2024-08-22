@@ -1,0 +1,41 @@
+{
+  "nodes": {
+    "//": {
+      "op": "/",
+      "children": ["*", "2"],
+      "eclass": "top"
+    },
+    "**": {
+      "op": "*",
+      "eclass": "top",
+      "children": ["a", "/"]
+    },
+    "*": {
+      "op": "*",
+      "eclass": "middle",
+      "children": ["a", "2"]
+    },
+    "<<": {
+      "op": "<<",
+      "eclass": "middle",
+      "children": ["a", "1"]
+    },
+    "a": {
+      "op": "a",
+      "eclass": "top"
+    },
+    "2": {
+      "op": "2",
+      "eclass": "bottom"
+    },
+    "1": {
+      "op": "1",
+      "eclass": "right"
+    },
+    "/": {
+      "op": "/",
+      "eclass": "right",
+      "children": ["2"]
+    }
+  }
+}
