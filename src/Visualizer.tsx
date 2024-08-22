@@ -9,7 +9,7 @@ import type { EdgeProps, EdgeTypes, NodeProps } from "@xyflow/react";
 import ELK, { ElkExtendedEdge, ElkNode } from "elkjs/lib/elk-api";
 import ELKWorkerURL from "elkjs/lib/elk-worker?url";
 
-import { memo, startTransition, Suspense, use, useCallback, useEffect, useMemo, useState } from "react";
+import { createContext, memo, startTransition, Suspense, use, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import {
   ReactFlow,
   ReactFlowProvider,
@@ -24,6 +24,12 @@ import {
   BaseEdge,
   Handle,
   Position,
+  NodeToolbar,
+  Controls,
+  Panel,
+  MiniMap,
+  useStore,
+  useOnSelectionChange,
 } from "@xyflow/react";
 
 import "@xyflow/react/dist/style.css";
@@ -75,8 +81,22 @@ type Color = string;
 // https://vega.github.io/vega/docs/schemes/#categorical
 const colorScheme: Color[] = [...scheme("pastel1"), ...scheme("pastel2")];
 
-type FlowClass = Node<{ color: string | null; id: string }, "class">;
-type FlowNode = Node<{ label: string; id: string }, "node">;
+type FlowClass = Node<
+  {
+    color: string | null;
+    id: string;
+    // selected?: boolean
+  },
+  "class"
+>;
+type FlowNode = Node<
+  {
+    label: string;
+    id: string;
+    // selected?: boolean
+  },
+  "node"
+>;
 type FlowEdge = Edge<{ points: { x: number; y: number }[] }, "edge">;
 
 type MyELKEdge = ElkExtendedEdge & { data: { sourceNode: string } };
@@ -250,7 +270,8 @@ function toFlowEdges(layout: MyELKNodeLayedOut): FlowEdge[] {
 
 export function EClassNode({ data }: NodeProps<FlowClass>) {
   return (
-    <div className="rounded-md border border-dotted border-stone-400 h-full w-full" style={{ backgroundColor: data.color! }}>
+    <div className="rounded-md border border-dotted border-stone-400 h-full w-full" style={{ backgroundColor: data.color! || "white" }}>
+      {/* <MyNodeToolbar type="class" id={data.id} selected={data.selected} /> */}
       <Handle type="target" position={Position.Top} className="invisible" />
     </div>
   );
@@ -266,6 +287,8 @@ export function ENode(
 ) {
   return (
     <div className="p-1 rounded-md border bg-white border-stone-400 h-full w-full" ref={props?.outerRef}>
+      {/* {props?.outerRef ? <></> : <MyNodeToolbar type="class" id={props!.data!.id} selected={props!.data!.selected} />} */}
+
       <div className="font-mono truncate max-w-96" ref={props?.innerRef}>
         {props?.data?.label}
       </div>
@@ -274,6 +297,25 @@ export function ENode(
     </div>
   );
 }
+
+// export function MyNodeToolbar(node: { type: "class" | "node"; id: string; selected: boolean | undefined }) {
+//   const selectNode = useContext(SetSelectedNodeContext);
+
+//   const onClick = useCallback(() => {
+//     startTransition(() => selectNode!(node));
+//   }, [selectNode, node]);
+
+//   return (
+//     <NodeToolbar position={Position.Top} isVisible={node.selected || false}>
+//       <button
+//         onClick={onClick}
+//         className="rounded bg-white px-2 py-1 text-xs font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50"
+//       >
+//         Filter descendants
+//       </button>
+//     </NodeToolbar>
+//   );
+// }
 
 export function CustomEdge({ markerEnd, data }: EdgeProps<FlowEdge>) {
   const { points } = data!;
@@ -290,6 +332,14 @@ const edgeTypes: EdgeTypes = {
   edge: memo(CustomEdge),
 };
 
+// Context to store a callback to set the node so it can be accessed from the node component
+// without having to pass it manually
+const SetSelectedNodeContext = createContext<null | ((node: { type: "class" | "node"; id: string }) => void)>(null);
+
+// function nodeColor(node: FlowClass | FlowNode): string {
+//   return node.type === "class" ? node.data.color! : "white";
+// }
+
 function LayoutFlow({ egraph, outerElem, innerElem }: { egraph: string; outerElem: HTMLDivElement; innerElem: HTMLDivElement }) {
   const parsedEGraph: EGraph = useMemo(() => JSON.parse(egraph), [egraph]);
   /// e-class ID we have currently selected
@@ -302,13 +352,6 @@ function LayoutFlow({ egraph, outerElem, innerElem }: { egraph: string; outerEle
   const layout = use(layoutPromise);
   const edges = useMemo(() => toFlowEdges(layout), [layout]);
   const nodes = useMemo(() => toFlowNodes(layout), [layout]);
-  const onNodeClick = useCallback(
-    ((_, node) => {
-      // Use start transition so that the whole component doesn't re-render
-      startTransition(() => setSelectedNode({ type: node.type!, id: node.data.id }));
-    }) as NodeMouseHandler<FlowClass | FlowNode>,
-    [setSelectedNode]
-  );
 
   // Fit the view when the nodes are initialized, which happens initially and after a filter
   const reactFlow = useReactFlow();
@@ -319,20 +362,58 @@ function LayoutFlow({ egraph, outerElem, innerElem }: { egraph: string; outerEle
     }
   }, [reactFlow, nodesInitialized]);
 
+  const unselectNode = useCallback(
+    () =>
+      startTransition(() => {
+        // reactFlow.updateNodeData(selectedNode!.id, { selected: false });
+        setSelectedNode(null);
+      }),
+    [setSelectedNode]
+  );
+
+  const onNodeClick = useCallback(
+    ((_, node) => {
+      startTransition(() => {
+        setSelectedNode({ type: node.type!, id: node.data.id });
+      });
+    }) as NodeMouseHandler<FlowClass | FlowNode>,
+    [setSelectedNode]
+  );
+
   return (
-    <ReactFlow
-      nodes={nodes}
-      nodeTypes={nodeTypes}
-      edgeTypes={edgeTypes}
-      edges={edges}
-      minZoom={0.05}
-      maxZoom={10}
-      defaultEdgeOptions={{ markerEnd: { type: MarkerType.ArrowClosed } }}
-      onNodeClick={onNodeClick}
-      onPaneClick={() => setSelectedNode(null)}
-    >
-      <Background />
-    </ReactFlow>
+    <SetSelectedNodeContext.Provider value={setSelectedNode}>
+      <ReactFlow
+        nodes={nodes}
+        nodeTypes={nodeTypes}
+        edgeTypes={edgeTypes}
+        edges={edges}
+        minZoom={0.05}
+        maxZoom={10}
+        nodesDraggable={false}
+        nodesConnectable={false}
+        nodesFocusable={true}
+        // nodeDragThreshold={100}
+        onNodeClick={onNodeClick}
+        defaultEdgeOptions={{ markerEnd: { type: MarkerType.ArrowClosed } }}
+      >
+        {selectedNode ? (
+          <Panel position="top-center">
+            <button
+              className="rounded bg-white px-2 py-1 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50"
+              onClick={unselectNode}
+            >
+              Reset filter
+            </button>
+          </Panel>
+        ) : (
+          <></>
+        )}
+        <Background />
+        <Controls />
+        {/* Doesn't really show nodes when they are so small */}
+        {/* <MiniMap nodeColor={nodeColor} nodeStrokeColor={nodeColor} zoomable pannable nodeStrokeWidth={1000} /> */}
+      </ReactFlow>
+    </SetSelectedNodeContext.Provider>
   );
 }
 

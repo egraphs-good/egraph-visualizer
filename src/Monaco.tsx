@@ -4,9 +4,9 @@ import { startTransition, use, useEffect, useMemo, useState } from "react";
 import MonacoEditor from "react-monaco-editor";
 
 const examples = {
+  ...import.meta.glob("/examples/manual/*.json", { query: "?raw" }),
   ...import.meta.glob("/examples/egraph-serialize/tests/*.json", { query: "?raw" }),
   ...import.meta.glob("/examples/extraction-gym/data/*/*.json", { query: "?raw" }),
-  ...import.meta.glob("/examples/manual/*.json", { query: "?raw" }),
 };
 
 const defaultExample = "/examples/manual/homepage.json";
