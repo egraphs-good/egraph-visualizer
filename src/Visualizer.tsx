@@ -9,7 +9,7 @@ import type { EdgeProps, EdgeTypes, NodeProps } from "@xyflow/react";
 import ELK, { ElkExtendedEdge, ElkNode } from "elkjs/lib/elk-api";
 import ELKWorkerURL from "elkjs/lib/elk-worker?url";
 
-import { createContext, memo, startTransition, Suspense, use, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, memo, startTransition, Suspense, use, useCallback, useEffect, useMemo, useState } from "react";
 import {
   ReactFlow,
   ReactFlowProvider,
@@ -24,12 +24,8 @@ import {
   BaseEdge,
   Handle,
   Position,
-  NodeToolbar,
   Controls,
   Panel,
-  MiniMap,
-  useStore,
-  useOnSelectionChange,
 } from "@xyflow/react";
 
 import "@xyflow/react/dist/style.css";
