@@ -174,17 +174,20 @@ function toELKNode(
     }
   }
   const class_data = egraph.class_data || {};
-  const type_to_color = new Map<string | undefined, Color>();
-  for (const { type } of Object.values(class_data)) {
-    if (!type_to_color.has(type)) {
-      type_to_color.set(type, colorScheme[type_to_color.size % colorScheme.length]);
-    }
-  }
+  // Sort types so that the colors are consistent
+  const sortedTypes = Object.values(class_data)
+    .map(({ type }) => type)
+    .filter((type) => type)
+    .sort();
+  const typeToColor = sortedTypes.reduce((acc, type, index) => {
+    acc.set(type, colorScheme[index % colorScheme.length]);
+    return acc;
+  }, new Map([[undefined, null]]) as Map<string | undefined, string | null>);
 
   const children = [...classToNodes.entries()].map(([id, nodes]) => {
     return {
       id: `class-${id}`,
-      data: { color: type_to_color.get(class_data[id]?.type) || null, port: `port-${id}`, id },
+      data: { color: typeToColor.get(class_data[id]?.type)!, port: `port-${id}`, id },
       type: "class" as const,
       children: nodes.map(([id, node]) => {
         // compute the size of the text by setting a dummy node element then measureing it
