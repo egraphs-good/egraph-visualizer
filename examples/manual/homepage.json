@@ -35,7 +35,7 @@
     "/": {
       "op": "/",
       "eclass": "right",
-      "children": ["2"]
+      "children": ["2", "2"]
     }
   }
 }
