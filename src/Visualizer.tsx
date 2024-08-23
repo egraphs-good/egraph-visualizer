@@ -257,16 +257,23 @@ function toFlowNodes(layout: MyELKNodeLayedOut): (FlowClass | FlowNode)[] {
 }
 
 function toFlowEdges(layout: MyELKNodeLayedOut): FlowEdge[] {
-  const allEdges = [...layout.edges!, ...layout.children.flatMap(({ edges }) => edges!)];
-  return allEdges.map(({ id, sections, data: { sourceNode } }) => {
+  const containerToPosition = { [layout.id]: { x: 0, y: 0 }, ...Object.fromEntries(layout.children.map(({ id, x, y }) => [id, { x, y }])) };
+  const allEdges = [...layout.edges!, ...layout.children.flatMap(({ edges }) => edges!.map((edge) => edge))];
+  return allEdges.map(({ id, sections, data: { sourceNode }, ...rest }) => {
     const [section] = sections!;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const containerPosition = containerToPosition[(rest as any).container];
     return {
       type: "edge",
       id,
       source: sourceNode,
       target: section.outgoingShape!,
       data: {
-        points: [section.startPoint, ...(section.bendPoints || []), section.endPoint],
+        // Add container start to edge so that this is correct for edges nested in parents which are needed for self edges
+        points: [section.startPoint, ...(section.bendPoints || []), section.endPoint].map(({ x, y }) => ({
+          x: x + containerPosition.x,
+          y: y + containerPosition.y,
+        })),
       },
     };
   });
