@@ -289,7 +289,11 @@ function toFlowEdges(layout: MyELKNodeLayedOut): FlowEdge[] {
 
 export function EClassNode({ data }: NodeProps<FlowClass>) {
   return (
-    <div className="rounded-md border border-dotted border-black h-full w-full" style={{ backgroundColor: data.color! || "white" }}>
+    <div
+      className="rounded-md border border-dotted border-black h-full w-full"
+      style={{ backgroundColor: data.color! || "white" }}
+      title={data.id}
+    >
       {/* <MyNodeToolbar type="class" id={data.id} selected={data.selected} /> */}
       <Handle type="target" position={Position.Top} className="invisible" />
     </div>
@@ -308,7 +312,11 @@ export function ENode(
     <div className="p-1 rounded-md border bg-white border-black h-full w-full" ref={props?.outerRef}>
       {/* {props?.outerRef ? <></> : <MyNodeToolbar type="class" id={props!.data!.id} selected={props!.data!.selected} />} */}
 
-      <div className="font-mono text-xs truncate max-w-96 min-w-4 text-center" ref={props?.innerRef}>
+      <div
+        className="font-mono text-xs truncate max-w-96 min-w-4 text-center"
+        title={`${props?.data?.id}\n${props?.data?.label}`}
+        ref={props?.innerRef}
+      >
         {props?.data?.label}
       </div>
       {/* Only show handle if we aren't rendering this to calculate size */}
