@@ -1,6 +1,7 @@
 /// <reference types="react/canary" />
 
 import "@xyflow/react/dist/style.css";
+import { CodeBracketIcon } from "@heroicons/react/24/outline";
 
 import { scheme } from "vega-scale";
 import { ErrorBoundary } from "react-error-boundary";
@@ -29,6 +30,7 @@ import {
 } from "@xyflow/react";
 
 import "@xyflow/react/dist/style.css";
+import { compressToEncodedURIComponent } from "lz-string";
 
 // Elk has a *huge* amount of options to configure. To see everything you can
 // tweak check out:
@@ -347,6 +349,7 @@ function LayoutFlow({ egraph, outerElem, innerElem }: { egraph: string; outerEle
     () => toELKNode(parsedEGraph, outerElem, innerElem, selectedNode),
     [parsedEGraph, outerElem, innerElem, selectedNode]
   );
+  const beforeLayout = useMemo(() => JSON.stringify(elkNode, null, 2), [elkNode]);
   const layoutPromise = useMemo(() => elk.layout(elkNode) as Promise<MyELKNodeLayedOut>, [elkNode]);
   const layout = use(layoutPromise);
   const edges = useMemo(() => toFlowEdges(layout), [layout]);
@@ -398,7 +401,7 @@ function LayoutFlow({ egraph, outerElem, innerElem }: { egraph: string; outerEle
         {selectedNode ? (
           <Panel position="top-center">
             <button
-              className="rounded bg-white px-2 py-1 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50"
+              className="rounded bg-white px-2 py-1 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 hover:shadow-md hover:ring-gray-400 transition-all duration-200"
               onClick={unselectNode}
             >
               Reset filter
@@ -407,6 +410,18 @@ function LayoutFlow({ egraph, outerElem, innerElem }: { egraph: string; outerEle
         ) : (
           <></>
         )}
+        <Panel position="top-right">
+          <CodeBracketIcon
+            title="Open in ELK Live editor"
+            className="h-6 w-6 cursor-pointer hover:text-blue-500 transition-colors duration-200"
+            onClick={useCallback(() => {
+              const compressedContent = compressToEncodedURIComponent(beforeLayout);
+              const url = new URL(`https://rtsys.informatik.uni-kiel.de/elklive/json.html?compressedContent=${compressedContent}`);
+              window.open(url, "_blank", "noopener,noreferrer");
+            }, [beforeLayout])}
+          />
+        </Panel>
+
         <Background />
         <Controls />
         {/* Doesn't really show nodes when they are so small */}
