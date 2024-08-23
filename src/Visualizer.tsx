@@ -300,7 +300,7 @@ export function ENode(
     <div className="p-1 rounded-md border bg-white border-stone-400 h-full w-full" ref={props?.outerRef}>
       {/* {props?.outerRef ? <></> : <MyNodeToolbar type="class" id={props!.data!.id} selected={props!.data!.selected} />} */}
 
-      <div className="font-mono text-xs truncate max-w-96" ref={props?.innerRef}>
+      <div className="font-mono text-xs truncate max-w-96 min-w-4 text-center" ref={props?.innerRef}>
         {props?.data?.label}
       </div>
       {/* Only show handle if we aren't rendering this to calculate size */}
