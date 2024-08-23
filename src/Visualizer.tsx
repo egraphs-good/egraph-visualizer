@@ -43,7 +43,7 @@ const layoutOptions = {
   // "elk.spacing.nodeNode": "80",
   "elk.direction": "DOWN",
   "elk.hierarchyHandling": "INCLUDE_CHILDREN",
-  "elk.layered.mergeEdges": "True",
+  // "elk.layered.mergeEdges": "True",
   // "elk.edgeRouting": "SPLINES",
   "elk.layered.nodePlacement.strategy": "NETWORK_SIMPLEX",
 
