@@ -288,7 +288,7 @@ function toFlowEdges(layout: MyELKNodeLayedOut): FlowEdge[] {
 
 export function EClassNode({ data }: NodeProps<FlowClass>) {
   return (
-    <div className="rounded-md border border-dotted border-stone-400 h-full w-full" style={{ backgroundColor: data.color! || "white" }}>
+    <div className="rounded-md border border-dotted border-black h-full w-full" style={{ backgroundColor: data.color! || "white" }}>
       {/* <MyNodeToolbar type="class" id={data.id} selected={data.selected} /> */}
       <Handle type="target" position={Position.Top} className="invisible" />
     </div>
@@ -304,7 +304,7 @@ export function ENode(
   >
 ) {
   return (
-    <div className="p-1 rounded-md border bg-white border-stone-400 h-full w-full" ref={props?.outerRef}>
+    <div className="p-1 rounded-md border bg-white border-black h-full w-full" ref={props?.outerRef}>
       {/* {props?.outerRef ? <></> : <MyNodeToolbar type="class" id={props!.data!.id} selected={props!.data!.selected} />} */}
 
       <div className="font-mono text-xs truncate max-w-96 min-w-4 text-center" ref={props?.innerRef}>
@@ -335,10 +335,10 @@ export function ENode(
 //   );
 // }
 
-export function CustomEdge({ markerEnd, data }: EdgeProps<FlowEdge>) {
+export function CustomEdge({ data, ...rest }: EdgeProps<FlowEdge>) {
   const { points } = data!;
   const edgePath = points.map(({ x, y }, index) => `${index === 0 ? "M" : "L"} ${x} ${y}`).join(" ");
-  return <BaseEdge path={edgePath} markerEnd={markerEnd} />;
+  return <BaseEdge path={edgePath} {...rest} />;
 }
 
 const nodeTypes: NodeTypes = {
@@ -413,7 +413,7 @@ function LayoutFlow({ egraph, outerElem, innerElem }: { egraph: string; outerEle
         nodesFocusable={true}
         // nodeDragThreshold={100}
         onNodeClick={onNodeClick}
-        defaultEdgeOptions={{ markerEnd: { type: MarkerType.ArrowClosed } }}
+        defaultEdgeOptions={{ markerEnd: { type: MarkerType.ArrowClosed, color: "black" }, style: { stroke: "black", strokeWidth: 0.5 } }}
       >
         {selectedNode ? (
           <Panel position="top-center">
