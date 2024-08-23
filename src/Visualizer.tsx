@@ -128,6 +128,9 @@ type MyELKNodeLayedOut = Omit<MyELKNode, "children"> & {
   })[];
 };
 
+// the number of pixels of padding between nodes and between nodes and their parents
+const nodePadding = 5;
+
 // We wil convert this to a graph where the id of the nodes are class-{class_id} and node-{node_id}
 // the ID of the edges will be edge-{source_id}-{port-index} and the ports will be port-{source_id}-{port-index}
 function toELKNode(
@@ -190,6 +193,10 @@ function toELKNode(
       id: `class-${id}`,
       data: { color: typeToColor.get(class_data[id]?.type)!, port: `port-${id}`, id },
       type: "class" as const,
+      layoutOptions: {
+        "elk.spacing.nodeNode": nodePadding,
+        "elk.padding": `[top=${nodePadding},left=${nodePadding},bottom=${nodePadding},right=${nodePadding}]`,
+      },
       children: nodes.map(([id, node]) => {
         // compute the size of the text by setting a dummy node element then measureing it
         innerElem.innerText = node.op;
