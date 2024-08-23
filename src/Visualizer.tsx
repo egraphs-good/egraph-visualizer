@@ -42,7 +42,6 @@ const layoutOptions = {
   // "elk.layered.spacing.nodeNodeBetweenLayers": "100",
   // "elk.spacing.nodeNode": "80",
   "elk.direction": "DOWN",
-  "elk.portConstraints": "FIXED_SIDE",
   "elk.hierarchyHandling": "INCLUDE_CHILDREN",
   "elk.layered.mergeEdges": "True",
   // "elk.edgeRouting": "SPLINES",
@@ -201,6 +200,10 @@ function toELKNode(
           data: { label: node.op, id },
           width: size.width,
           height: size.height,
+          labels: [{ text: node.op }],
+          layoutOptions: {
+            portConstraints: "FIXED_SIDE",
+          },
           ports: Object.keys(node.children || []).map((index) => ({
             id: `port-${id}-${index}`,
             layoutOptions: {
@@ -290,7 +293,7 @@ export function ENode(
     <div className="p-1 rounded-md border bg-white border-stone-400 h-full w-full" ref={props?.outerRef}>
       {/* {props?.outerRef ? <></> : <MyNodeToolbar type="class" id={props!.data!.id} selected={props!.data!.selected} />} */}
 
-      <div className="font-mono truncate max-w-96" ref={props?.innerRef}>
+      <div className="font-mono text-xs truncate max-w-96" ref={props?.innerRef}>
         {props?.data?.label}
       </div>
       {/* Only show handle if we aren't rendering this to calculate size */}
