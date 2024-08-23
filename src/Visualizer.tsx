@@ -194,8 +194,9 @@ function toELKNode(
       data: { color: typeToColor.get(class_data[id]?.type)!, port: `port-${id}`, id },
       type: "class" as const,
       layoutOptions: {
-        "elk.spacing.nodeNode": nodePadding,
+        "elk.spacing.nodeNode": nodePadding.toString(),
         "elk.padding": `[top=${nodePadding},left=${nodePadding},bottom=${nodePadding},right=${nodePadding}]`,
+        "elk.spacing.portPort": "0",
       },
       children: nodes.map(([id, node]) => {
         // compute the size of the text by setting a dummy node element then measureing it
