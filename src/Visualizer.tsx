@@ -37,7 +37,8 @@ import { compressToEncodedURIComponent } from "lz-string";
 //
 // - https://www.eclipse.org/elk/reference/algorithms.html
 // - https://www.eclipse.org/elk/reference/options.html
-const layoutOptions = {
+
+const rootLayoutOptions = {
   "elk.algorithm": "layered",
   // "elk.layered.spacing.nodeNodeBetweenLayers": "100",
   // "elk.spacing.nodeNode": "80",
@@ -50,6 +51,19 @@ const layoutOptions = {
   "elk.layered.edgeRouting.splines.mode": "CONSERVATIVE",
   // "elk.layered.spacing.baseValue": "40",
   // "elk.layered.nodePlacement.strategy": "NETWORK_SIMPLEX",
+};
+// the number of pixels of padding between nodes and between nodes and their parents
+const nodePadding = 5;
+
+const classLayoutOptions = {
+  "elk.spacing.nodeNode": nodePadding.toString(),
+  "elk.padding": `[top=${nodePadding},left=${nodePadding},bottom=${nodePadding},right=${nodePadding}]`,
+  "elk.spacing.portPort": "0",
+  portConstraints: "FREE",
+};
+
+const nodeLayoutOptions = {
+  portConstraints: "FIXED_ORDER",
 };
 
 const elk = new ELK({
@@ -94,23 +108,21 @@ type FlowNode = Node<
   },
   "node"
 >;
-type FlowEdge = Edge<{ points: { x: number; y: number }[] }, "edge">;
+type FlowEdge = Edge<{ points: { x: number; y: number }[]; isInner: boolean }, "edge">;
 
-type MyELKEdge = ElkExtendedEdge & { data: { sourceNode: string } };
+type MyELKEdge = ElkExtendedEdge & { sourceNode: string; targetNode: string; data: Omit<NonNullable<FlowEdge["data"]>, "points"> };
 /// ELK Node but with additional data added to be later used when converting to react flow nodes
 type MyELKNode = Omit<ElkNode, "children" | "edges"> & {
   edges: MyELKEdge[];
   children: ({
-    type: NonNullable<FlowClass["type"]>;
     data: FlowClass["data"];
+    // Edges from e-node to it's own class must be in sub-graph
     edges: MyELKEdge[];
-    children: {
-      type: NonNullable<FlowNode["type"]>;
+    children: ({
       width: number;
       height: number;
       data: FlowNode["data"];
-    }[] &
-      ElkNode[];
+    } & ElkNode)[];
   } & Omit<ElkNode, "children" | "position" | "edges">)[];
 };
 
@@ -127,9 +139,6 @@ type MyELKNodeLayedOut = Omit<MyELKNode, "children"> & {
     })[];
   })[];
 };
-
-// the number of pixels of padding between nodes and between nodes and their parents
-const nodePadding = 5;
 
 // We wil convert this to a graph where the id of the nodes are class-{class_id} and node-{node_id}
 // the ID of the edges will be edge-{source_id}-{port-index} and the ports will be port-{source_id}-{port-index}
@@ -188,74 +197,103 @@ function toELKNode(
     return acc;
   }, new Map([[undefined, null]]) as Map<string | undefined, string | null>);
 
-  const children = [...classToNodes.entries()].map(([id, nodes]) => {
-    return {
-      id: `class-${id}`,
-      data: { color: typeToColor.get(class_data[id]?.type)!, port: `port-${id}`, id },
-      type: "class" as const,
-      layoutOptions: {
-        "elk.spacing.nodeNode": nodePadding.toString(),
-        "elk.padding": `[top=${nodePadding},left=${nodePadding},bottom=${nodePadding},right=${nodePadding}]`,
-        "elk.spacing.portPort": "0",
-      },
-      children: nodes.map(([id, node]) => {
-        // compute the size of the text by setting a dummy node element then measureing it
-        innerElem.innerText = node.op;
-        const size = outerElem.getBoundingClientRect();
-        return {
-          id: `node-${id}`,
-          type: "node" as const,
-          data: { label: node.op, id },
-          width: size.width,
-          height: size.height,
-          labels: [{ text: node.op }],
-          layoutOptions: {
-            portConstraints: "FIXED_SIDE",
-          },
-          ports: Object.keys(node.children || []).map((index) => ({
-            id: `port-${id}-${index}`,
-            layoutOptions: {
-              "port.side": "SOUTH",
-            },
-          })),
-        };
-      }),
-      edges: nodes.flatMap(([id, node]) =>
-        [...(node.children || []).entries()].map(([index, childNode]) => ({
-          id: `edge-${id}-${index}`,
-          data: { sourceNode: `node-${id}` },
-          sources: [`port-${id}-${index}`],
-          targets: [`class-${nodeToClass.get(childNode)!}`],
-        }))
-      ),
+  const elkRoot: MyELKNode = {
+    id: "--eclipse-layout-kernel-root",
+    layoutOptions: rootLayoutOptions,
+    edges: [],
+    children: [],
+  };
+  for (const [classID, nodes] of classToNodes.entries()) {
+    const elkClassID = `class-${classID}`;
+    const elkClass: MyELKNode["children"][0] = {
+      id: elkClassID,
+      data: { color: typeToColor.get(class_data[classID]?.type)!, id: classID },
+      layoutOptions: classLayoutOptions,
+      children: [],
+      ports: [],
+      edges: [],
     };
-  });
+    elkRoot.children.push(elkClass);
+    for (const [nodeID, node] of nodes) {
+      innerElem.innerText = node.op;
+      const size = outerElem.getBoundingClientRect();
+      const elkNodeID = `node-${nodeID}`;
+      const elkNode: MyELKNode["children"][0]["children"][0] = {
+        id: elkNodeID,
+        data: { label: node.op, id: nodeID },
+        width: size.width,
+        height: size.height,
+        labels: [{ text: node.op }],
+        layoutOptions: nodeLayoutOptions,
+        ports: [],
+      };
+      elkClass.children.push(elkNode);
+      const nPorts = Object.keys(node.children || []).length;
+      for (const [index, child] of (node.children || []).entries()) {
+        const elkNodePortID = `port-${nodeID}-${index}`;
+        const targetClassID = nodeToClass.get(child)!;
 
-  // move all edges that aren't self loops to the root
-  // https://github.com/eclipse/elk/issues/1068
-  const edges = [];
-  for (const child of children) {
-    const { loop, not } = Object.groupBy(child.edges, ({ targets }) => (targets[0] === child.id ? "loop" : "not"));
-    child.edges = loop || [];
-    edges.push(...(not || []));
+        elkNode.ports!.push({
+          id: elkNodePortID,
+          layoutOptions: {
+            "port.side": "SOUTH",
+            /// index is clockwise from top right, so we need to the reverse index, so that first port is on the left
+            "port.index": (nPorts - index).toString(),
+          },
+        });
+        const elkEdgeID = `edge-${nodeID}-${index}`;
+        // any loop/self edges need to added twice, once from the inner node to the edge, then from the edge back to the node itself
+        // so that the edge leaves the e-class
+        // https://github.com/eclipse/elk/issues/1068
+        if (targetClassID === classID) {
+          // edge one goes from the node to a port at the edge of the class
+          const elkClassPortID = `port-${classID}-${elkClass.ports!.length}`;
+          elkClass.ports!.push({
+            id: elkClassPortID,
+          });
+          elkClass.edges!.push({
+            id: `${elkEdgeID}-inner`,
+            data: { isInner: true },
+            sourceNode: elkNodeID,
+            targetNode: elkClassID,
+            sources: [elkNodePortID],
+            targets: [elkClassPortID],
+          });
+          // edge two goes from the edge of the class back to the class
+          elkRoot.edges!.push({
+            id: `${elkEdgeID}-outer`,
+            data: { isInner: false },
+            sourceNode: elkClassID,
+            targetNode: elkClassID,
+            sources: [elkClassPortID],
+            targets: [elkClassID],
+          });
+        } else {
+          const elkTargetClassID = `class-${targetClassID}`;
+          elkRoot.edges!.push({
+            id: elkEdgeID,
+            data: { isInner: false },
+            sourceNode: elkNodeID,
+            targetNode: elkTargetClassID,
+            sources: [elkNodePortID],
+            targets: [elkTargetClassID],
+          });
+        }
+      }
+    }
   }
 
-  return {
-    id: "--eclipse-layout-kernel-root",
-    layoutOptions,
-    children,
-    edges,
-  };
+  return elkRoot;
 }
 
 // This function takes an EGraph and returns an ELK node that can be used to layout the graph.
 function toFlowNodes(layout: MyELKNodeLayedOut): (FlowClass | FlowNode)[] {
-  return layout.children.flatMap(({ children, x, y, data, id: parentId, type, height, width }) => [
-    { position: { x, y }, data, id: parentId, type, height, width },
-    ...children!.map(({ x, y, height, width, data, id, type }) => ({
+  return layout.children.flatMap(({ children, x, y, data, id: parentId, height, width }) => [
+    { position: { x, y }, data, id: parentId, type: "class" as const, height, width },
+    ...children!.map(({ x, y, height, width, data, id }) => ({
       data,
       id,
-      type,
+      type: "node" as const,
       parentId,
       position: { x, y },
       width,
@@ -267,7 +305,7 @@ function toFlowNodes(layout: MyELKNodeLayedOut): (FlowClass | FlowNode)[] {
 function toFlowEdges(layout: MyELKNodeLayedOut): FlowEdge[] {
   const containerToPosition = { [layout.id]: { x: 0, y: 0 }, ...Object.fromEntries(layout.children.map(({ id, x, y }) => [id, { x, y }])) };
   const allEdges = [...layout.edges!, ...layout.children.flatMap(({ edges }) => edges!.map((edge) => edge))];
-  return allEdges.map(({ id, sections, data: { sourceNode }, ...rest }) => {
+  return allEdges.map(({ id, sections, sourceNode, targetNode, data, ...rest }) => {
     const [section] = sections!;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const containerPosition = containerToPosition[(rest as any).container];
@@ -275,13 +313,14 @@ function toFlowEdges(layout: MyELKNodeLayedOut): FlowEdge[] {
       type: "edge",
       id,
       source: sourceNode,
-      target: section.outgoingShape!,
+      target: targetNode!,
       data: {
         // Add container start to edge so that this is correct for edges nested in parents which are needed for self edges
         points: [section.startPoint, ...(section.bendPoints || []), section.endPoint].map(({ x, y }) => ({
           x: x + containerPosition.x,
           y: y + containerPosition.y,
         })),
+        ...data,
       },
     };
   });
@@ -296,6 +335,7 @@ export function EClassNode({ data }: NodeProps<FlowClass>) {
     >
       {/* <MyNodeToolbar type="class" id={data.id} selected={data.selected} /> */}
       <Handle type="target" position={Position.Top} className="invisible" />
+      <Handle type="source" position={Position.Bottom} className="invisible" />
     </div>
   );
 }
@@ -345,8 +385,11 @@ export function ENode(
 // }
 
 export function CustomEdge({ data, ...rest }: EdgeProps<FlowEdge>) {
-  const { points } = data!;
+  const { points, isInner } = data!;
   const edgePath = points.map(({ x, y }, index) => `${index === 0 ? "M" : "L"} ${x} ${y}`).join(" ");
+  if (isInner) {
+    rest["markerEnd"] = undefined;
+  }
   return <BaseEdge path={edgePath} {...rest} />;
 }
 
@@ -376,6 +419,11 @@ function LayoutFlow({ egraph, outerElem, innerElem }: { egraph: string; outerEle
     [parsedEGraph, outerElem, innerElem, selectedNode]
   );
   const beforeLayout = useMemo(() => JSON.stringify(elkNode, null, 2), [elkNode]);
+  const onClickToELK = useCallback(() => {
+    const compressedContent = compressToEncodedURIComponent(beforeLayout);
+    const url = new URL(`https://rtsys.informatik.uni-kiel.de/elklive/json.html?compressedContent=${compressedContent}`);
+    window.open(url, "_blank", "noopener,noreferrer");
+  }, [beforeLayout]);
   const layoutPromise = useMemo(() => elk.layout(elkNode) as Promise<MyELKNodeLayedOut>, [elkNode]);
   const layout = use(layoutPromise);
   const edges = useMemo(() => toFlowEdges(layout), [layout]);
@@ -440,11 +488,7 @@ function LayoutFlow({ egraph, outerElem, innerElem }: { egraph: string; outerEle
           <CodeBracketIcon
             title="Open in ELK Live editor"
             className="h-6 w-6 cursor-pointer hover:text-blue-500 transition-colors duration-200"
-            onClick={useCallback(() => {
-              const compressedContent = compressToEncodedURIComponent(beforeLayout);
-              const url = new URL(`https://rtsys.informatik.uni-kiel.de/elklive/json.html?compressedContent=${compressedContent}`);
-              window.open(url, "_blank", "noopener,noreferrer");
-            }, [beforeLayout])}
+            onClick={onClickToELK}
           />
         </Panel>
 
