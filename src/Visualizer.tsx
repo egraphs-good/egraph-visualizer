@@ -17,7 +17,6 @@ import {
   Node,
   NodeTypes,
   NodeMouseHandler,
-  Background,
   MarkerType,
   Edge,
   useNodesInitialized,
@@ -492,7 +491,7 @@ function LayoutFlow({ egraph, outerElem, innerElem }: { egraph: string; outerEle
           />
         </Panel>
 
-        <Background />
+        {/* <Background /> */}
         <Controls />
         {/* Doesn't really show nodes when they are so small */}
         {/* <MiniMap nodeColor={nodeColor} nodeStrokeColor={nodeColor} zoomable pannable nodeStrokeWidth={1000} /> */}
