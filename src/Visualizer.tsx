@@ -29,7 +29,6 @@ import {
 } from "@xyflow/react";
 
 import "@xyflow/react/dist/style.css";
-import { compressToEncodedURIComponent } from "lz-string";
 
 // Elk has a *huge* amount of options to configure. To see everything you can
 // tweak check out:
@@ -159,6 +158,7 @@ function toELKNode(
     }
     classToNodes.get(node.eclass)!.push([id, node]);
   }
+
   /// filter out to descendants of the selected node
   if (selectedNode) {
     const toTraverse = new Set<string>();
@@ -437,9 +437,7 @@ function LayoutFlow({ egraph, outerElem, innerElem }: { egraph: string; outerEle
   );
   const beforeLayout = useMemo(() => JSON.stringify(elkNode, null, 2), [elkNode]);
   const onClickToELK = useCallback(() => {
-    const compressedContent = compressToEncodedURIComponent(beforeLayout);
-    const url = new URL(`https://rtsys.informatik.uni-kiel.de/elklive/json.html?compressedContent=${compressedContent}`);
-    window.open(url, "_blank", "noopener,noreferrer");
+    navigator.clipboard.writeText(beforeLayout);
   }, [beforeLayout]);
   const layoutPromise = useMemo(() => elk.layout(elkNode) as Promise<MyELKNodeLayedOut>, [elkNode]);
   const layout = use(layoutPromise);
@@ -503,7 +501,7 @@ function LayoutFlow({ egraph, outerElem, innerElem }: { egraph: string; outerEle
         )}
         <Panel position="top-right">
           <CodeBracketIcon
-            title="Open in ELK Live editor"
+            title="Copy ELK JSON"
             className="h-6 w-6 cursor-pointer hover:text-blue-500 transition-colors duration-200"
             onClick={onClickToELK}
           />

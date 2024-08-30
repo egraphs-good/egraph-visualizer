@@ -17,7 +17,6 @@
     "@heroicons/react": "2.1.5",
     "@xyflow/react": "12.1.1",
     "elkjs": "0.9.3",
-    "lz-string": "1.5.0",
     "monaco-editor": "0.50.0",
     "react": "19.0.0-rc-fa6eab58-20240815",
     "react-dom": "19.0.0-rc-fa6eab58-20240815",
