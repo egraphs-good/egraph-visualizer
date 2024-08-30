@@ -39,25 +39,28 @@ import { compressToEncodedURIComponent } from "lz-string";
 
 const rootLayoutOptions = {
   "elk.algorithm": "layered",
-  // "elk.layered.spacing.nodeNodeBetweenLayers": "100",
-  // "elk.spacing.nodeNode": "80",
   "elk.direction": "DOWN",
-  "elk.hierarchyHandling": "INCLUDE_CHILDREN",
-  // "elk.layered.mergeEdges": "True",
-  // "elk.edgeRouting": "SPLINES",
+  // This seems to result in a more compact layout
   "elk.layered.nodePlacement.strategy": "NETWORK_SIMPLEX",
 
-  "elk.layered.edgeRouting.splines.mode": "CONSERVATIVE",
-  // "elk.layered.spacing.baseValue": "40",
-  // "elk.layered.nodePlacement.strategy": "NETWORK_SIMPLEX",
+  // Can you use spline routing instead which generates non orthogonal edges
+  // "elk.edgeRouting": "SPLINES",
+  // "elk.layered.edgeRouting.splines.mode": "CONSERVATIVE",
 };
+
 // the number of pixels of padding between nodes and between nodes and their parents
 const nodePadding = 5;
 
 const classLayoutOptions = {
+  "elk.algorithm": "layered",
+  "elk.direction": "DOWN",
+  "elk.spacing.componentComponent": nodePadding.toString(),
   "elk.spacing.nodeNode": nodePadding.toString(),
   "elk.padding": `[top=${nodePadding},left=${nodePadding},bottom=${nodePadding},right=${nodePadding}]`,
   "elk.spacing.portPort": "0",
+  // allow ports on e-class to be anywhere
+  // TODO: they only seem to appear on top side of nodes, figure out if there is a way to allow them
+  // to be on all sides if it would result in a better layout
   portConstraints: "FREE",
 };
 
@@ -185,6 +188,20 @@ function toELKNode(
       }
     }
   }
+
+  const incomingEdges = new Map<EGraphClassID, { nodeID: string; index: number }[]>();
+  // use classToNodes instead of egraph.nodes since it's already filtered and we dont want to create
+  // export ports for nodes that are not in the graph
+  for (const [nodeID, node] of [...classToNodes.values()].flatMap((nodes) => nodes)) {
+    for (const [index, child] of (node.children || []).entries()) {
+      const childClass = nodeToClass.get(child)!;
+      if (!incomingEdges.has(childClass)) {
+        incomingEdges.set(childClass, []);
+      }
+      incomingEdges.get(childClass)!.push({ nodeID, index });
+    }
+  }
+
   const class_data = egraph.class_data || {};
   // Sort types so that the colors are consistent
   const sortedTypes = Object.values(class_data)
@@ -199,8 +216,8 @@ function toELKNode(
   const elkRoot: MyELKNode = {
     id: "--eclipse-layout-kernel-root",
     layoutOptions: rootLayoutOptions,
-    edges: [],
     children: [],
+    edges: [],
   };
   for (const [classID, nodes] of classToNodes.entries()) {
     const elkClassID = `class-${classID}`;
@@ -209,7 +226,10 @@ function toELKNode(
       data: { color: typeToColor.get(class_data[classID]?.type)!, id: classID },
       layoutOptions: classLayoutOptions,
       children: [],
-      ports: [],
+      ports: (incomingEdges.get(classID) || []).map(({ nodeID, index }) => ({
+        id: `port-class-incoming-${nodeID}-${index}`,
+      })),
+
       edges: [],
     };
     elkRoot.children.push(elkClass);
@@ -222,62 +242,60 @@ function toELKNode(
         data: { label: node.op, id: nodeID },
         width: size.width,
         height: size.height,
+        ports: [],
         labels: [{ text: node.op }],
         layoutOptions: nodeLayoutOptions,
-        ports: [],
       };
       elkClass.children.push(elkNode);
       const nPorts = Object.keys(node.children || []).length;
       for (const [index, child] of (node.children || []).entries()) {
-        const elkNodePortID = `port-${nodeID}-${index}`;
-        const targetClassID = nodeToClass.get(child)!;
+        const postfix = `-${nodeID}-${index}`;
+
+        // In order to get the layout we want, we don't set `"elk.hierarchyHandling": "INCLUDE_CHILDREN"`
+        // and instead have seperate layouts per e-class and globally. This means we need to make sure no edges
+        // exit an e-node without going through a port on the e-class.
+
+        // Two edges are created
+        /// [edge-inner]: [port-node] ---> [port-class-outgoing] on this class
+        /// [edge-outer]: [port-class-outgoing] on this class ---> [port-class-incoming] on target class
+
+        // IDs for ports and edges are the [name]-[node ID]-[output index]
+        // The [port-class-incoming] are already added, so we just need to add two edges and the other two ports
+
+        // see https://github.com/eclipse/elk/issues/1068 for more details
+
+        const elkTargetClassID = `class-${nodeToClass.get(child)!}`;
+        const elkNodePortID = `port-node${postfix}`;
+        const elkClassIncomingPortID = `port-class-incoming${postfix}`;
+        const elkClassOutgoingPortID = `port-class-outgoing${postfix}`;
+        const elkInnerEdgeID = `edge-inner${postfix}`;
+        const elkOuterEdgeID = `edge-outer${postfix}`;
 
         elkNode.ports!.push({
           id: elkNodePortID,
           layoutOptions: {
             "port.side": "SOUTH",
             /// index is clockwise from top right, so we need to the reverse index, so that first port is on the left
-            "port.index": (nPorts - index).toString(),
+            "port.index": (nPorts - index - 1).toString(),
           },
         });
-        const elkEdgeID = `edge-${nodeID}-${index}`;
-        // any loop/self edges need to added twice, once from the inner node to the edge, then from the edge back to the node itself
-        // so that the edge leaves the e-class
-        // https://github.com/eclipse/elk/issues/1068
-        if (targetClassID === classID) {
-          // edge one goes from the node to a port at the edge of the class
-          const elkClassPortID = `port-${classID}-${elkClass.ports!.length}`;
-          elkClass.ports!.push({
-            id: elkClassPortID,
-          });
-          elkClass.edges!.push({
-            id: `${elkEdgeID}-inner`,
-            data: { isInner: true },
-            sourceNode: elkNodeID,
-            targetNode: elkClassID,
-            sources: [elkNodePortID],
-            targets: [elkClassPortID],
-          });
-          // edge two goes from the edge of the class back to the class
-          elkRoot.edges!.push({
-            id: `${elkEdgeID}-outer`,
-            data: { isInner: false },
-            sourceNode: elkClassID,
-            targetNode: elkClassID,
-            sources: [elkClassPortID],
-            targets: [elkClassID],
-          });
-        } else {
-          const elkTargetClassID = `class-${targetClassID}`;
-          elkRoot.edges!.push({
-            id: elkEdgeID,
-            data: { isInner: false },
-            sourceNode: elkNodeID,
-            targetNode: elkTargetClassID,
-            sources: [elkNodePortID],
-            targets: [elkTargetClassID],
-          });
-        }
+        elkClass.ports!.push({ id: elkClassOutgoingPortID });
+        elkClass.edges!.push({
+          id: elkInnerEdgeID,
+          data: { isInner: true },
+          sourceNode: elkNodeID,
+          targetNode: elkClassID,
+          sources: [elkNodePortID],
+          targets: [elkClassOutgoingPortID],
+        });
+        elkRoot.edges!.push({
+          id: elkOuterEdgeID,
+          data: { isInner: false },
+          sourceNode: elkClassID,
+          targetNode: elkTargetClassID,
+          sources: [elkClassOutgoingPortID],
+          targets: [elkClassIncomingPortID],
+        });
       }
     }
   }
