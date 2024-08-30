@@ -147,7 +147,8 @@ function toELKNode(
   egraph: EGraph,
   outerElem: HTMLDivElement,
   innerElem: HTMLDivElement,
-  selectedNode: { type: "class" | "node"; id: string } | null
+  selectedNode: { type: "class" | "node"; id: string } | null,
+  aspectRatio: number
 ): MyELKNode {
   const nodeToClass = new Map<EGraphNodeID, EGraphClassID>();
   const classToNodes = new Map<EGraphClassID, [EGraphNodeID, EGraphNode][]>();
@@ -219,6 +220,8 @@ function toELKNode(
     children: [],
     edges: [],
   };
+  // aspectRatio must be number for it to work
+  elkRoot.layoutOptions!["elk.aspectRatio"] = aspectRatio as unknown as string;
   for (const [classID, nodes] of classToNodes.entries()) {
     const elkClassID = `class-${classID}`;
     const elkClass: MyELKNode["children"][0] = {
@@ -427,13 +430,23 @@ const SetSelectedNodeContext = createContext<null | ((node: { type: "class" | "n
 //   return node.type === "class" ? node.data.color! : "white";
 // }
 
-function LayoutFlow({ egraph, outerElem, innerElem }: { egraph: string; outerElem: HTMLDivElement; innerElem: HTMLDivElement }) {
+function LayoutFlow({
+  egraph,
+  outerElem,
+  innerElem,
+  aspectRatio,
+}: {
+  egraph: string;
+  outerElem: HTMLDivElement;
+  innerElem: HTMLDivElement;
+  aspectRatio: number;
+}) {
   const parsedEGraph: EGraph = useMemo(() => JSON.parse(egraph), [egraph]);
   /// e-class ID we have currently selected
   const [selectedNode, setSelectedNode] = useState<{ type: "class" | "node"; id: string } | null>(null);
   const elkNode = useMemo(
-    () => toELKNode(parsedEGraph, outerElem, innerElem, selectedNode),
-    [parsedEGraph, outerElem, innerElem, selectedNode]
+    () => toELKNode(parsedEGraph, outerElem, innerElem, selectedNode, aspectRatio),
+    [parsedEGraph, outerElem, innerElem, selectedNode, aspectRatio]
   );
   const beforeLayout = useMemo(() => JSON.stringify(elkNode, null, 2), [elkNode]);
   const onClickToELK = useCallback(() => {
@@ -520,8 +533,15 @@ function Visualizer({ egraph }: { egraph: string }) {
   const [outerElem, setOuterElem] = useState<HTMLDivElement | null>(null);
   const [innerElem, setInnerElem] = useState<HTMLDivElement | null>(null);
 
+  const [rootElem, setRootElem] = useState<HTMLDivElement | null>(null);
+
+  const aspectRatio = useMemo(() => {
+    if (rootElem) {
+      return rootElem.clientWidth / rootElem.clientHeight;
+    }
+  }, [rootElem]);
   return (
-    <>
+    <div className="w-full h-full" ref={setRootElem}>
       {/* Hidden node to measure text size  */}
       <div className="invisible absolute">
         <ENode outerRef={setOuterElem} innerRef={setInnerElem} />
@@ -529,11 +549,13 @@ function Visualizer({ egraph }: { egraph: string }) {
       <ReactFlowProvider>
         <ErrorBoundary fallback={<p>⚠️Something went wrong</p>}>
           <Suspense fallback={<div>Laying out graph...</div>}>
-            {outerElem && innerElem && <LayoutFlow key={egraph} egraph={egraph} outerElem={outerElem} innerElem={innerElem} />}
+            {outerElem && innerElem && aspectRatio && (
+              <LayoutFlow key={egraph} aspectRatio={aspectRatio} egraph={egraph} outerElem={outerElem} innerElem={innerElem} />
+            )}
           </Suspense>
         </ErrorBoundary>
       </ReactFlowProvider>
-    </>
+    </div>
   );
 }
 
