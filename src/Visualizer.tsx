@@ -499,6 +499,9 @@ function LayoutFlow({
         // nodeDragThreshold={100}
         onNodeClick={onNodeClick}
         defaultEdgeOptions={{ markerEnd: { type: MarkerType.ArrowClosed, color: "black" }, style: { stroke: "black", strokeWidth: 0.5 } }}
+        // It seems like it's OK to remove attribution if we aren't making money off our usage
+        // https://reactflow.dev/learn/troubleshooting/remove-attribution
+        proOptions={{ hideAttribution: true }}
       >
         {selectedNode ? (
           <Panel position="top-center">
