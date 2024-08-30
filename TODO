@@ -1,6 +1,0 @@
-☐ add labels
-☐ Add ELK json outoput
-    ☐             compressedContent: LZString.compressToEncodedURIComponent(editor.getValue())
-
-☐ Fix self edgees
-☐ filter descdents based on toolbar
