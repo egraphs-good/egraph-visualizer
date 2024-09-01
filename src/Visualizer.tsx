@@ -10,7 +10,7 @@ import type { EdgeProps, EdgeTypes, NodeProps } from "@xyflow/react";
 import ELK, { ElkExtendedEdge, ElkNode } from "elkjs/lib/elk-api";
 import ELKWorkerURL from "elkjs/lib/elk-worker?url";
 
-import { createContext, memo, startTransition, Suspense, use, useCallback, useEffect, useMemo, useState } from "react";
+import { memo, startTransition, Suspense, use, useCallback, useEffect, useMemo, useState } from "react";
 import {
   ReactFlow,
   ReactFlowProvider,
@@ -424,11 +424,101 @@ const edgeTypes: EdgeTypes = {
 
 // Context to store a callback to set the node so it can be accessed from the node component
 // without having to pass it manually
-const SetSelectedNodeContext = createContext<null | ((node: { type: "class" | "node"; id: string }) => void)>(null);
+// const SetSelectedNodeContext = createContext<null | ((node: { type: "class" | "node"; id: string }) => void)>(null);
 
 // function nodeColor(node: FlowClass | FlowNode): string {
 //   return node.type === "class" ? node.data.color! : "white";
 // }
+
+/// Component responsible for actualyl rendeirng the graph after it has been laid out
+/// also responsible for
+function Rendering({
+  nodes,
+  edges,
+  selectedNode,
+  selectNode,
+  elkJSON,
+}: {
+  nodes: (FlowClass | FlowNode)[];
+  edges: FlowEdge[];
+  selectedNode: { type: "class" | "node"; id: string } | null;
+  selectNode: (node: { type: "class" | "node"; id: string } | null) => void;
+  elkJSON: string;
+}) {
+  const unselectNode = useCallback(
+    () =>
+      startTransition(() => {
+        selectNode(null);
+      }),
+    [selectNode]
+  );
+  const onClickToELK = useCallback(() => {
+    navigator.clipboard.writeText(elkJSON);
+  }, [elkJSON]);
+
+  const onNodeClick = useCallback(
+    ((_, node) => {
+      startTransition(() => {
+        selectNode({ type: node.type!, id: node.data.id });
+      });
+    }) as NodeMouseHandler<FlowClass | FlowNode>,
+    [selectNode]
+  );
+
+  // Fit the view when the nodes are initialized, which happens initially and after a filter
+  const reactFlow = useReactFlow();
+  const nodesInitialized = useNodesInitialized();
+  useEffect(() => {
+    if (nodesInitialized) {
+      reactFlow.fitView({ padding: 0.1 });
+    }
+  }, [reactFlow, nodesInitialized]);
+
+  return (
+    <ReactFlow
+      nodes={nodes}
+      nodeTypes={nodeTypes}
+      edgeTypes={edgeTypes}
+      edges={edges}
+      minZoom={0.05}
+      maxZoom={10}
+      nodesDraggable={false}
+      nodesConnectable={false}
+      nodesFocusable={true}
+      // nodeDragThreshold={100}
+      onNodeClick={onNodeClick}
+      defaultEdgeOptions={{ markerEnd: { type: MarkerType.ArrowClosed, color: "black" }, style: { stroke: "black", strokeWidth: 0.5 } }}
+      // It seems like it's OK to remove attribution if we aren't making money off our usage
+      // https://reactflow.dev/learn/troubleshooting/remove-attribution
+      proOptions={{ hideAttribution: true }}
+    >
+      {selectedNode ? (
+        <Panel position="top-center">
+          <button
+            className="rounded bg-white px-2 py-1 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 hover:shadow-md hover:ring-gray-400 transition-all duration-200"
+            onClick={unselectNode}
+          >
+            Reset filter
+          </button>
+        </Panel>
+      ) : (
+        <></>
+      )}
+      <Panel position="top-right">
+        <CodeBracketIcon
+          title="Copy ELK JSON"
+          className="h-6 w-6 cursor-pointer hover:text-blue-500 transition-colors duration-200"
+          onClick={onClickToELK}
+        />
+      </Panel>
+
+      {/* <Background /> */}
+      <Controls />
+      {/* Doesn't really show nodes when they are so small */}
+      {/* <MiniMap nodeColor={nodeColor} nodeStrokeColor={nodeColor} zoomable pannable nodeStrokeWidth={1000} /> */}
+    </ReactFlow>
+  );
+}
 
 function LayoutFlow({
   egraph,
@@ -449,87 +539,13 @@ function LayoutFlow({
     [parsedEGraph, outerElem, innerElem, selectedNode, aspectRatio]
   );
   const beforeLayout = useMemo(() => JSON.stringify(elkNode, null, 2), [elkNode]);
-  const onClickToELK = useCallback(() => {
-    navigator.clipboard.writeText(beforeLayout);
-  }, [beforeLayout]);
+
   const layoutPromise = useMemo(() => elk.layout(elkNode) as Promise<MyELKNodeLayedOut>, [elkNode]);
   const layout = use(layoutPromise);
   const edges = useMemo(() => toFlowEdges(layout), [layout]);
   const nodes = useMemo(() => toFlowNodes(layout), [layout]);
 
-  // Fit the view when the nodes are initialized, which happens initially and after a filter
-  const reactFlow = useReactFlow();
-  const nodesInitialized = useNodesInitialized();
-  useEffect(() => {
-    if (nodesInitialized) {
-      reactFlow.fitView({ padding: 0.1 });
-    }
-  }, [reactFlow, nodesInitialized]);
-
-  const unselectNode = useCallback(
-    () =>
-      startTransition(() => {
-        // reactFlow.updateNodeData(selectedNode!.id, { selected: false });
-        setSelectedNode(null);
-      }),
-    [setSelectedNode]
-  );
-
-  const onNodeClick = useCallback(
-    ((_, node) => {
-      startTransition(() => {
-        setSelectedNode({ type: node.type!, id: node.data.id });
-      });
-    }) as NodeMouseHandler<FlowClass | FlowNode>,
-    [setSelectedNode]
-  );
-
-  return (
-    <SetSelectedNodeContext.Provider value={setSelectedNode}>
-      <ReactFlow
-        nodes={nodes}
-        nodeTypes={nodeTypes}
-        edgeTypes={edgeTypes}
-        edges={edges}
-        minZoom={0.05}
-        maxZoom={10}
-        nodesDraggable={false}
-        nodesConnectable={false}
-        nodesFocusable={true}
-        // nodeDragThreshold={100}
-        onNodeClick={onNodeClick}
-        defaultEdgeOptions={{ markerEnd: { type: MarkerType.ArrowClosed, color: "black" }, style: { stroke: "black", strokeWidth: 0.5 } }}
-        // It seems like it's OK to remove attribution if we aren't making money off our usage
-        // https://reactflow.dev/learn/troubleshooting/remove-attribution
-        proOptions={{ hideAttribution: true }}
-      >
-        {selectedNode ? (
-          <Panel position="top-center">
-            <button
-              className="rounded bg-white px-2 py-1 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 hover:shadow-md hover:ring-gray-400 transition-all duration-200"
-              onClick={unselectNode}
-            >
-              Reset filter
-            </button>
-          </Panel>
-        ) : (
-          <></>
-        )}
-        <Panel position="top-right">
-          <CodeBracketIcon
-            title="Copy ELK JSON"
-            className="h-6 w-6 cursor-pointer hover:text-blue-500 transition-colors duration-200"
-            onClick={onClickToELK}
-          />
-        </Panel>
-
-        {/* <Background /> */}
-        <Controls />
-        {/* Doesn't really show nodes when they are so small */}
-        {/* <MiniMap nodeColor={nodeColor} nodeStrokeColor={nodeColor} zoomable pannable nodeStrokeWidth={1000} /> */}
-      </ReactFlow>
-    </SetSelectedNodeContext.Provider>
-  );
+  return <Rendering nodes={nodes} edges={edges} selectedNode={selectedNode} selectNode={setSelectedNode} elkJSON={beforeLayout} />;
 }
 
 function Visualizer({ egraph }: { egraph: string }) {
