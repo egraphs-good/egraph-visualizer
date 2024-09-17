@@ -392,11 +392,7 @@ export function ENode(
 
 export function MyNodeToolbar(node: { type: "class" | "node"; id: string }) {
   const selectNode = useContext(SetSelectedNodeContext);
-
-  const onClick = useCallback(() => {
-    startTransition(() => selectNode!(node));
-  }, [selectNode, node]);
-
+  const onClick = useCallback(() => selectNode!(node), [selectNode, node]);
   return (
     <NodeToolbar position={Position.Top}>
       <button
@@ -463,7 +459,7 @@ function Rendering({
     setRenderedInitialEdges(initialEdges);
     setEdges(initialEdges);
   }
-
+  // Handle node/edge selection
   const onNodesChange = useCallback(
     (changes: NodeChange<FlowNode | FlowClass>[]) => setNodes((nds) => applyNodeChanges(changes, nds)),
     [setNodes]
@@ -471,13 +467,7 @@ function Rendering({
   const onEdgesChange = useCallback((changes: EdgeChange<FlowEdge>[]) => setEdges((eds) => applyEdgeChanges(changes, eds)), [setEdges]);
 
   const selectNode = useContext(SetSelectedNodeContext)!;
-  const unselectNode = useCallback(
-    () =>
-      startTransition(() => {
-        selectNode(null);
-      }),
-    [selectNode]
-  );
+  const unselectNode = useCallback(() => selectNode(null), [selectNode]);
   const onClickToELK = useCallback(() => {
     navigator.clipboard.writeText(elkJSON);
   }, [elkJSON]);
@@ -549,9 +539,25 @@ function LayoutFlow({
   innerElem: HTMLDivElement;
   aspectRatio: number;
 }) {
+  // e-class ID we have currently selected, store egraph string as well so we know if this selection is outdated
+  const [privateSelectedNode, setPrivateSelectedNode] = useState<{ type: "class" | "node"; id: string; egraph: string } | null>(null);
+  const selectedNode = useMemo(() => {
+    if (privateSelectedNode && privateSelectedNode.egraph === egraph) {
+      return privateSelectedNode;
+    }
+    return null;
+  }, [privateSelectedNode, egraph]);
+  const setSelectedNode = useCallback(
+    (node: { type: "class" | "node"; id: string } | null) => {
+      startTransition(() => {
+        setPrivateSelectedNode(node ? { ...node, egraph } : null);
+      });
+    },
+    [setPrivateSelectedNode, egraph]
+  );
+
   const parsedEGraph: EGraph = useMemo(() => JSON.parse(egraph), [egraph]);
-  // e-class ID we have currently selected
-  const [selectedNode, setSelectedNode] = useState<{ type: "class" | "node"; id: string } | null>(null);
+
   const elkNode = useMemo(
     () => toELKNode(parsedEGraph, outerElem, innerElem, selectedNode, aspectRatio),
     [parsedEGraph, outerElem, innerElem, selectedNode, aspectRatio]
@@ -590,7 +596,7 @@ function Visualizer({ egraph }: { egraph: string }) {
         <ErrorBoundary fallback={<p>⚠️Something went wrong</p>}>
           <Suspense fallback={<div>Laying out graph...</div>}>
             {outerElem && innerElem && aspectRatio && (
-              <LayoutFlow key={egraph} aspectRatio={aspectRatio} egraph={egraph} outerElem={outerElem} innerElem={innerElem} />
+              <LayoutFlow aspectRatio={aspectRatio} egraph={egraph} outerElem={outerElem} innerElem={innerElem} />
             )}
           </Suspense>
         </ErrorBoundary>
