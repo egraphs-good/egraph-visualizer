@@ -111,9 +111,9 @@ type FlowNode = Node<
   },
   "node"
 >;
-type FlowEdge = Edge<{ points: { x: number; y: number }[]; isInner: boolean }, "edge">;
+type FlowEdge = Edge<{ points: { x: number; y: number }[] }, "edge">;
 
-type MyELKEdge = ElkExtendedEdge & { sourceNode: string; targetNode: string; data: Omit<NonNullable<FlowEdge["data"]>, "points"> };
+type MyELKEdge = ElkExtendedEdge & { sourceNode: string; targetNode: string; edgeID: string };
 /// ELK Node but with additional data added to be later used when converting to react flow nodes
 type MyELKNode = Omit<ElkNode, "children" | "edges"> & {
   edges: MyELKEdge[];
@@ -254,7 +254,7 @@ function toELKNode(
       elkClass.children.push(elkNode);
       const nPorts = Object.keys(node.children || []).length;
       for (const [index, child] of (node.children || []).entries()) {
-        const postfix = `-${nodeID}-${index}`;
+        const edgeID = `${nodeID}-${index}`;
 
         // In order to get the layout we want, we don't set `"elk.hierarchyHandling": "INCLUDE_CHILDREN"`
         // and instead have seperate layouts per e-class and globally. This means we need to make sure no edges
@@ -270,11 +270,11 @@ function toELKNode(
         // see https://github.com/eclipse/elk/issues/1068 for more details
 
         const elkTargetClassID = `class-${nodeToClass.get(child)!}`;
-        const elkNodePortID = `port-node${postfix}`;
-        const elkClassIncomingPortID = `port-class-incoming${postfix}`;
-        const elkClassOutgoingPortID = `port-class-outgoing${postfix}`;
-        const elkInnerEdgeID = `edge-inner${postfix}`;
-        const elkOuterEdgeID = `edge-outer${postfix}`;
+        const elkNodePortID = `port-node-${edgeID}`;
+        const elkClassIncomingPortID = `port-class-incoming-${edgeID}`;
+        const elkClassOutgoingPortID = `port-class-outgoing-${edgeID}`;
+        const elkInnerEdgeID = `edge-inner-${edgeID}`;
+        const elkOuterEdgeID = `edge-outer-${edgeID}`;
 
         elkNode.ports!.push({
           id: elkNodePortID,
@@ -287,7 +287,7 @@ function toELKNode(
         elkClass.ports!.push({ id: elkClassOutgoingPortID });
         elkClass.edges!.push({
           id: elkInnerEdgeID,
-          data: { isInner: true },
+          edgeID,
           sourceNode: elkNodeID,
           targetNode: elkClassID,
           sources: [elkNodePortID],
@@ -295,7 +295,7 @@ function toELKNode(
         });
         elkRoot.edges!.push({
           id: elkOuterEdgeID,
-          data: { isInner: false },
+          edgeID,
           sourceNode: elkClassID,
           targetNode: elkTargetClassID,
           sources: [elkClassOutgoingPortID],
@@ -325,27 +325,28 @@ function toFlowNodes(layout: MyELKNodeLayedOut): (FlowClass | FlowNode)[] {
 }
 
 function toFlowEdges(layout: MyELKNodeLayedOut): FlowEdge[] {
-  const containerToPosition = { [layout.id]: { x: 0, y: 0 }, ...Object.fromEntries(layout.children.map(({ id, x, y }) => [id, { x, y }])) };
-  const allEdges = [...layout.edges!, ...layout.children.flatMap(({ edges }) => edges!.map((edge) => edge))];
-  return allEdges.map(({ id, sections, sourceNode, targetNode, data, ...rest }) => {
-    const [section] = sections!;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const containerPosition = containerToPosition[(rest as any).container];
-    return {
-      type: "edge",
-      id,
-      source: sourceNode,
-      target: targetNode!,
-      data: {
-        // Add container start to edge so that this is correct for edges nested in parents which are needed for self edges
-        points: [section.startPoint, ...(section.bendPoints || []), section.endPoint].map(({ x, y }) => ({
-          x: x + containerPosition.x,
-          y: y + containerPosition.y,
-        })),
-        ...data,
-      },
-    };
-  });
+  const outerEdges = Object.fromEntries(layout.edges!.map(({ edgeID, sections }) => [edgeID, sections![0]]));
+  return layout.children.flatMap(({ x: parentX, y: parentY, edges }) =>
+    edges!.map(({ edgeID, sections, sourceNode, targetNode }) => {
+      const [section] = sections!;
+      const outerEdge = outerEdges[edgeID];
+      // Add container start to edge so that this is correct for edges nested in parents which are needed for self edges
+      const innerPoints = [section.startPoint, ...(section.bendPoints || []), section.endPoint].map(({ x, y }) => ({
+        x: x + parentX,
+        y: y + parentY,
+      }));
+      return {
+        type: "edge",
+        id: edgeID,
+        source: sourceNode,
+        target: targetNode!,
+        data: {
+          // Combien inner and outer edge show it just shows up once in the rendering and can be selected as a single unit.
+          points: [...innerPoints, ...(outerEdge.bendPoints || []), outerEdge.endPoint],
+        },
+      };
+    })
+  );
 }
 
 export function EClassNode({ data, selected }: NodeProps<FlowClass>) {
@@ -406,11 +407,8 @@ export function MyNodeToolbar(node: { type: "class" | "node"; id: string }) {
 }
 
 export function CustomEdge({ data, ...rest }: EdgeProps<FlowEdge>) {
-  const { points, isInner } = data!;
+  const { points } = data!;
   const edgePath = points.map(({ x, y }, index) => `${index === 0 ? "M" : "L"} ${x} ${y}`).join(" ");
-  if (isInner) {
-    rest["markerEnd"] = undefined;
-  }
   return <BaseEdge {...rest} path={edgePath} style={{ stroke: "black", strokeWidth: rest.selected ? 1 : 0.5 }} />;
 }
 
