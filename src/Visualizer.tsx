@@ -5,18 +5,17 @@ import { CodeBracketIcon } from "@heroicons/react/24/outline";
 
 import { scheme } from "vega-scale";
 import { ErrorBoundary } from "react-error-boundary";
-import type { EdgeProps, EdgeTypes, NodeProps } from "@xyflow/react";
+import type { EdgeChange, EdgeProps, EdgeTypes, NodeChange, NodeProps } from "@xyflow/react";
 
 import ELK, { ElkExtendedEdge, ElkNode } from "elkjs/lib/elk-api";
 import ELKWorkerURL from "elkjs/lib/elk-worker?url";
 
-import { memo, startTransition, Suspense, use, useCallback, useEffect, useMemo, useState } from "react";
+import { createContext, memo, startTransition, Suspense, use, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import {
   ReactFlow,
   ReactFlowProvider,
   Node,
   NodeTypes,
-  NodeMouseHandler,
   MarkerType,
   Edge,
   useNodesInitialized,
@@ -26,6 +25,9 @@ import {
   Position,
   Controls,
   Panel,
+  applyNodeChanges,
+  applyEdgeChanges,
+  NodeToolbar,
 } from "@xyflow/react";
 
 import "@xyflow/react/dist/style.css";
@@ -346,14 +348,14 @@ function toFlowEdges(layout: MyELKNodeLayedOut): FlowEdge[] {
   });
 }
 
-export function EClassNode({ data }: NodeProps<FlowClass>) {
+export function EClassNode({ data, selected }: NodeProps<FlowClass>) {
   return (
     <div
-      className="rounded-md border border-dotted border-black h-full w-full"
+      className={`rounded-md border-dotted border-black h-full w-full ${selected ? "border-2" : "border"}`}
       style={{ backgroundColor: data.color! || "white" }}
       title={data.id}
     >
-      {/* <MyNodeToolbar type="class" id={data.id} selected={data.selected} /> */}
+      <MyNodeToolbar type="class" id={data.id} />
       <Handle type="target" position={Position.Top} className="invisible" />
       <Handle type="source" position={Position.Bottom} className="invisible" />
     </div>
@@ -369,8 +371,11 @@ export function ENode(
   >
 ) {
   return (
-    <div className="p-1 rounded-md border bg-white border-black h-full w-full" ref={props?.outerRef}>
-      {/* {props?.outerRef ? <></> : <MyNodeToolbar type="class" id={props!.data!.id} selected={props!.data!.selected} />} */}
+    <div
+      className={`p-1 rounded-md outline bg-white outline-black h-full w-full ${props?.selected ? "outline-2" : "outline-1"}`}
+      ref={props?.outerRef}
+    >
+      {props?.outerRef ? <></> : <MyNodeToolbar type="node" id={props!.data!.id} />}
 
       <div
         className="font-mono text-xs truncate max-w-96 min-w-4 text-center"
@@ -385,24 +390,24 @@ export function ENode(
   );
 }
 
-// export function MyNodeToolbar(node: { type: "class" | "node"; id: string; selected: boolean | undefined }) {
-//   const selectNode = useContext(SetSelectedNodeContext);
+export function MyNodeToolbar(node: { type: "class" | "node"; id: string }) {
+  const selectNode = useContext(SetSelectedNodeContext);
 
-//   const onClick = useCallback(() => {
-//     startTransition(() => selectNode!(node));
-//   }, [selectNode, node]);
+  const onClick = useCallback(() => {
+    startTransition(() => selectNode!(node));
+  }, [selectNode, node]);
 
-//   return (
-//     <NodeToolbar position={Position.Top} isVisible={node.selected || false}>
-//       <button
-//         onClick={onClick}
-//         className="rounded bg-white px-2 py-1 text-xs font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50"
-//       >
-//         Filter descendants
-//       </button>
-//     </NodeToolbar>
-//   );
-// }
+  return (
+    <NodeToolbar position={Position.Top}>
+      <button
+        onClick={onClick}
+        className="rounded bg-white px-2 py-1 text-xs font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50"
+      >
+        Filter descendants
+      </button>
+    </NodeToolbar>
+  );
+}
 
 export function CustomEdge({ data, ...rest }: EdgeProps<FlowEdge>) {
   const { points, isInner } = data!;
@@ -410,7 +415,7 @@ export function CustomEdge({ data, ...rest }: EdgeProps<FlowEdge>) {
   if (isInner) {
     rest["markerEnd"] = undefined;
   }
-  return <BaseEdge path={edgePath} {...rest} />;
+  return <BaseEdge {...rest} path={edgePath} style={{ stroke: "black", strokeWidth: rest.selected ? 1 : 0.5 }} />;
 }
 
 const nodeTypes: NodeTypes = {
@@ -424,7 +429,7 @@ const edgeTypes: EdgeTypes = {
 
 // Context to store a callback to set the node so it can be accessed from the node component
 // without having to pass it manually
-// const SetSelectedNodeContext = createContext<null | ((node: { type: "class" | "node"; id: string }) => void)>(null);
+const SetSelectedNodeContext = createContext<null | ((node: { type: "class" | "node"; id: string } | null) => void)>(null);
 
 // function nodeColor(node: FlowClass | FlowNode): string {
 //   return node.type === "class" ? node.data.color! : "white";
@@ -433,18 +438,39 @@ const edgeTypes: EdgeTypes = {
 /// Component responsible for actualyl rendeirng the graph after it has been laid out
 /// also responsible for
 function Rendering({
-  nodes,
-  edges,
+  nodes: initialNodes,
+  edges: initialEdges,
   selectedNode,
-  selectNode,
   elkJSON,
 }: {
   nodes: (FlowClass | FlowNode)[];
   edges: FlowEdge[];
   selectedNode: { type: "class" | "node"; id: string } | null;
-  selectNode: (node: { type: "class" | "node"; id: string } | null) => void;
   elkJSON: string;
 }) {
+  const [renderedInitialNodes, setRenderedInitialNodes] = useState(initialNodes);
+  const [renderedInitialEdges, setRenderedInitialEdges] = useState(initialEdges);
+  const [nodes, setNodes] = useState(initialNodes);
+  const [edges, setEdges] = useState(initialEdges);
+
+  // reset nodes when initialNodes changes
+  if (initialNodes !== renderedInitialNodes) {
+    setRenderedInitialNodes(initialNodes);
+    setNodes(initialNodes);
+  }
+  // reset edges when initialEdges changes
+  if (initialEdges !== renderedInitialEdges) {
+    setRenderedInitialEdges(initialEdges);
+    setEdges(initialEdges);
+  }
+
+  const onNodesChange = useCallback(
+    (changes: NodeChange<FlowNode | FlowClass>[]) => setNodes((nds) => applyNodeChanges(changes, nds)),
+    [setNodes]
+  );
+  const onEdgesChange = useCallback((changes: EdgeChange<FlowEdge>[]) => setEdges((eds) => applyEdgeChanges(changes, eds)), [setEdges]);
+
+  const selectNode = useContext(SetSelectedNodeContext)!;
   const unselectNode = useCallback(
     () =>
       startTransition(() => {
@@ -456,15 +482,6 @@ function Rendering({
     navigator.clipboard.writeText(elkJSON);
   }, [elkJSON]);
 
-  const onNodeClick = useCallback(
-    ((_, node) => {
-      startTransition(() => {
-        selectNode({ type: node.type!, id: node.data.id });
-      });
-    }) as NodeMouseHandler<FlowClass | FlowNode>,
-    [selectNode]
-  );
-
   // Fit the view when the nodes are initialized, which happens initially and after a filter
   const reactFlow = useReactFlow();
   const nodesInitialized = useNodesInitialized();
@@ -473,7 +490,6 @@ function Rendering({
       reactFlow.fitView({ padding: 0.1 });
     }
   }, [reactFlow, nodesInitialized]);
-
   return (
     <ReactFlow
       nodes={nodes}
@@ -485,9 +501,11 @@ function Rendering({
       nodesDraggable={false}
       nodesConnectable={false}
       nodesFocusable={true}
+      onNodesChange={onNodesChange}
+      onEdgesChange={onEdgesChange}
       // nodeDragThreshold={100}
-      onNodeClick={onNodeClick}
-      defaultEdgeOptions={{ markerEnd: { type: MarkerType.ArrowClosed, color: "black" }, style: { stroke: "black", strokeWidth: 0.5 } }}
+      // onNodeClick={onNodeClick}
+      defaultEdgeOptions={{ markerEnd: { type: MarkerType.ArrowClosed, color: "black" } }}
       // It seems like it's OK to remove attribution if we aren't making money off our usage
       // https://reactflow.dev/learn/troubleshooting/remove-attribution
       proOptions={{ hideAttribution: true }}
@@ -532,7 +550,7 @@ function LayoutFlow({
   aspectRatio: number;
 }) {
   const parsedEGraph: EGraph = useMemo(() => JSON.parse(egraph), [egraph]);
-  /// e-class ID we have currently selected
+  // e-class ID we have currently selected
   const [selectedNode, setSelectedNode] = useState<{ type: "class" | "node"; id: string } | null>(null);
   const elkNode = useMemo(
     () => toELKNode(parsedEGraph, outerElem, innerElem, selectedNode, aspectRatio),
@@ -544,8 +562,11 @@ function LayoutFlow({
   const layout = use(layoutPromise);
   const edges = useMemo(() => toFlowEdges(layout), [layout]);
   const nodes = useMemo(() => toFlowNodes(layout), [layout]);
-
-  return <Rendering nodes={nodes} edges={edges} selectedNode={selectedNode} selectNode={setSelectedNode} elkJSON={beforeLayout} />;
+  return (
+    <SetSelectedNodeContext.Provider value={setSelectedNode}>
+      <Rendering nodes={nodes} edges={edges} selectedNode={selectedNode} elkJSON={beforeLayout} />
+    </SetSelectedNodeContext.Provider>
+  );
 }
 
 function Visualizer({ egraph }: { egraph: string }) {
