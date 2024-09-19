@@ -63,6 +63,15 @@ const classLayoutOptions = {
   portConstraints: "FREE",
 };
 
+// https://github.com/eclipse/elk/issues/1037#issuecomment-2122136560
+const interactiveOptions = {
+  "elk.layered.cycleBreaking.strategy": "INTERACTIVE",
+  "elk.layered.layering.strategy": "INTERACTIVE",
+  "elk.layered.nodePlacement.strategy": "INTERACTIVE",
+  // Had to disable or leads to weird edges
+  // "elk.layered.crossingMinimization.strategy": "INTERACTIVE",
+};
+
 const nodeLayoutOptions = {
   portConstraints: "FIXED_ORDER",
 };
@@ -148,7 +157,8 @@ function toELKNode(
   outerElem: HTMLDivElement,
   innerElem: HTMLDivElement,
   selectedNode: { type: "class" | "node"; id: string } | null,
-  aspectRatio: number
+  aspectRatio: number,
+  previousLayout: MyELKNodeLayedOut | null
 ): MyELKNode {
   const nodeToClass = new Map<EGraphNodeID, EGraphClassID>();
   const classToNodes = new Map<EGraphClassID, [EGraphNodeID, EGraphNode][]>();
@@ -298,6 +308,38 @@ function toELKNode(
           sources: [elkClassOutgoingPortID],
           targets: [elkClassIncomingPortID],
         });
+      }
+    }
+  }
+  if (previousLayout) {
+    const previousLayoutClassIDs = new Set(previousLayout.children.map(({ data }) => data.id));
+    const overlappingClasses = Object.groupBy(
+      elkRoot.children,
+      ({ data }) => previousLayoutClassIDs.has(data.id).toString() as "true" | "false"
+    );
+    // Use interactive layout if more than half the classes already have positions as a heuristic
+    if ((overlappingClasses.false || []).length > (overlappingClasses.true || []).length) {
+      console.log("not using interactive layout");
+      return elkRoot;
+    }
+    // We have some children that were already layed out. So let's update all layout options to be interactive
+    // and preserve the positions of the nodes that were already layed out
+    elkRoot.layoutOptions = { ...elkRoot.layoutOptions, ...interactiveOptions };
+    for (const elkClass of elkRoot.children) {
+      const previousClass = previousLayout.children.find(({ data }) => data.id === elkClass.id);
+      if (!previousClass) {
+        continue;
+      }
+      Object.assign(elkClass.layoutOptions!, interactiveOptions);
+      elkClass.x = previousClass.x;
+      elkClass.y = previousClass.y;
+      for (const elkNode of elkClass.children) {
+        const previousNode = previousClass.children.find(({ data }) => data.id === elkNode.id);
+        if (!previousNode) {
+          continue;
+        }
+        elkNode.x = previousNode.x;
+        elkNode.y = previousNode.y;
       }
     }
   }
@@ -602,6 +644,7 @@ function LayoutFlow({
   innerElem: HTMLDivElement;
   aspectRatio: number;
 }) {
+  const previousLayoutRef = useRef<MyELKNodeLayedOut | null>(null);
   // e-class ID we have currently selected, store egraph string as well so we know if this selection is outdated
   const [selectedNodeWithEGraph, setSelectedNodeWithEGraph] = useState<{ type: "class" | "node"; id: string; egraph: string } | null>(null);
   const selectedNode = useMemo(() => {
@@ -621,13 +664,16 @@ function LayoutFlow({
   const parsedEGraph: EGraph = useMemo(() => JSON.parse(egraph), [egraph]);
 
   const elkNode = useMemo(
-    () => toELKNode(parsedEGraph, outerElem, innerElem, selectedNode, aspectRatio),
-    [parsedEGraph, outerElem, innerElem, selectedNode, aspectRatio]
+    () => toELKNode(parsedEGraph, outerElem, innerElem, selectedNode, aspectRatio, previousLayoutRef.current),
+    [parsedEGraph, outerElem, innerElem, selectedNode, aspectRatio, previousLayoutRef]
   );
   const beforeLayout = useMemo(() => JSON.stringify(elkNode, null, 2), [elkNode]);
 
   const layoutPromise = useMemo(() => elk.layout(elkNode) as Promise<MyELKNodeLayedOut>, [elkNode]);
   const layout = use(layoutPromise);
+  useEffect(() => {
+    previousLayoutRef.current = layout;
+  }, [layout]);
   const edges = useMemo(() => toFlowEdges(layout), [layout]);
   const nodes = useMemo(() => toFlowNodes(layout), [layout]);
   return (
