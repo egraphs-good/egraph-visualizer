@@ -286,14 +286,14 @@ function toELKNode(
           id: elkInnerEdgeID,
           edgeID,
           sourceNode: elkNodeID,
-          targetNode: elkClassID,
+          targetNode: elkTargetClassID,
           sources: [elkNodePortID],
           targets: [elkClassOutgoingPortID],
         });
         elkRoot.edges!.push({
           id: elkOuterEdgeID,
           edgeID,
-          sourceNode: elkClassID,
+          sourceNode: elkNodeID,
           targetNode: elkTargetClassID,
           sources: [elkClassOutgoingPortID],
           targets: [elkClassIncomingPortID],
@@ -397,7 +397,7 @@ export function MyNodeToolbar(node: { type: "class" | "node"; id: string }) {
         onClick={onClick}
         className="rounded bg-white px-2 py-1 text-xs font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50"
       >
-        Filter to descendants
+        Filter
       </button>
     </NodeToolbar>
   );
@@ -474,6 +474,18 @@ function Rendering({
   selectedNode: { type: "class" | "node"; id: string } | null;
   elkJSON: string;
 }) {
+  const nodeToEdges = useMemo(() => {
+    // Each node is a source for some edges and a target for others, no node will be both a target and a source
+    return new Map(
+      [
+        ...Object.entries(Object.groupBy(initialEdges, (edge) => edge.source)),
+        ...Object.entries(Object.groupBy(initialEdges, (edge) => edge.target)),
+      ].map(([nodeID, edges]) => [nodeID, (edges || []).map((edge) => edge.id)])
+    );
+  }, [initialEdges]);
+  const edgeToNodes = useMemo(() => {
+    return new Map(initialEdges.map((edge) => [edge.id, [edge.source, edge.target]]));
+  }, [initialEdges]);
   const [selectedEdges, setSelectedEdges] = useState<Set<string>>(new Set());
   const [selectedNodes, setSelectedNodes] = useState<Set<string>>(new Set());
   // Trigger this when we want to skip the next fitView, for example when we change selection
@@ -493,21 +505,25 @@ function Rendering({
     (changes: NodeChange<FlowNode | FlowClass>[]) => {
       const newSelectedNodes = processSelectionChanges(changes, selectedNodes);
       if (newSelectedNodes) {
+        const connectedEdges = [...newSelectedNodes].flatMap((node) => nodeToEdges.get(node)!);
         setSelectedNodes(newSelectedNodes);
+        setSelectedEdges(new Set(connectedEdges));
         skipNextFitRef.current = true;
       }
     },
-    [selectedNodes, setSelectedNodes]
+    [selectedNodes, setSelectedNodes, nodeToEdges, selectedEdges, setSelectedEdges]
   );
   const onEdgesChange = useCallback(
     (changes: EdgeChange<FlowEdge>[]) => {
       const newSelectedEdges = processSelectionChanges(changes, selectedEdges);
       if (newSelectedEdges) {
+        const connectedNodes = [...newSelectedEdges].flatMap((edge) => edgeToNodes.get(edge)!);
+        setSelectedNodes(new Set(connectedNodes));
         setSelectedEdges(newSelectedEdges);
         skipNextFitRef.current = true;
       }
     },
-    [selectedEdges, setSelectedEdges]
+    [selectedEdges, setSelectedEdges, edgeToNodes, selectedNodes, setSelectedNodes]
   );
 
   const selectNode = useContext(SetSelectedNodeContext)!;
