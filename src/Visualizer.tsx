@@ -150,6 +150,8 @@ type MyELKNodeLayedOut = Omit<MyELKNode, "children"> & {
   })[];
 };
 
+// Mapping of class to color, where undefined class mapps to null
+type Colors = Map<string | undefined, string | null>;
 // We wil convert this to a graph where the id of the nodes are class-{class_id} and node-{node_id}
 // the ID of the edges will be edge-{source_id}-{port-index} and the ports will be port-{source_id}-{port-index}
 function toELKNode(
@@ -158,8 +160,8 @@ function toELKNode(
   innerElem: HTMLDivElement,
   selectedNode: { type: "class" | "node"; id: string } | null,
   aspectRatio: number,
-  previousLayout: MyELKNodeLayedOut | null
-): MyELKNode {
+  previousLayout: { layout: MyELKNodeLayedOut; colors: Colors } | null
+): { elkNode: MyELKNode; colors: Colors } {
   const nodeToClass = new Map<EGraphNodeID, EGraphClassID>();
   const classToNodes = new Map<EGraphClassID, [EGraphNodeID, EGraphNode][]>();
   for (const [id, node] of Object.entries(egraph.nodes)) {
@@ -214,14 +216,30 @@ function toELKNode(
 
   const class_data = egraph.class_data || {};
   // Sort types so that the colors are consistent
-  const sortedTypes = Object.values(class_data)
-    .map(({ type }) => type)
-    .filter((type) => type)
-    .sort();
-  const typeToColor = sortedTypes.reduce((acc, type, index) => {
-    acc.set(type, colorScheme[index % colorScheme.length]);
-    return acc;
-  }, new Map([[undefined, null]]) as Map<string | undefined, string | null>);
+  const sortedTypes = [
+    ...new Set(
+      Object.values(class_data)
+        .map(({ type }) => type)
+        .filter((type) => type)
+    ),
+  ].sort();
+  const availableColors = [...colorScheme];
+  const colors = new Map([[undefined, null]]) as Map<string | undefined, string | null>;
+  // Start colors with those in previous layout if found
+  if (previousLayout) {
+    for (const [type, color] of previousLayout.colors.entries()) {
+      if (sortedTypes.includes(type) && color) {
+        colors.set(type, color);
+        // remove from available colors
+        availableColors.splice(availableColors.indexOf(color), 1);
+        sortedTypes.splice(sortedTypes.indexOf(type), 1);
+      }
+    }
+  }
+  console.log({ sortedTypes, availableColors });
+  for (const [index, type] of sortedTypes.entries()) {
+    colors.set(type, availableColors[index % availableColors.length]);
+  }
 
   const elkRoot: MyELKNode = {
     id: "--eclipse-layout-kernel-root",
@@ -235,7 +253,7 @@ function toELKNode(
     const elkClassID = `class-${classID}`;
     const elkClass: MyELKNode["children"][0] = {
       id: elkClassID,
-      data: { color: typeToColor.get(class_data[classID]?.type)!, id: classID },
+      data: { color: colors.get(class_data[classID]?.type)!, id: classID },
       layoutOptions: classLayoutOptions,
       children: [],
       ports: (incomingEdges.get(classID) || []).map(({ nodeID, index }) => ({
@@ -312,7 +330,8 @@ function toELKNode(
     }
   }
   if (previousLayout) {
-    const previousLayoutClassIDs = new Set(previousLayout.children.map(({ data }) => data.id));
+    const layout = previousLayout.layout;
+    const previousLayoutClassIDs = new Set(layout.children.map(({ data }) => data.id));
     const overlappingClasses = Object.groupBy(
       elkRoot.children,
       ({ data }) => previousLayoutClassIDs.has(data.id).toString() as "true" | "false"
@@ -320,13 +339,13 @@ function toELKNode(
     // Use interactive layout if more than half the classes already have positions as a heuristic
     if ((overlappingClasses.false || []).length > (overlappingClasses.true || []).length) {
       console.log("not using interactive layout");
-      return elkRoot;
+      return { elkNode: elkRoot, colors };
     }
     // We have some children that were already layed out. So let's update all layout options to be interactive
     // and preserve the positions of the nodes that were already layed out
     elkRoot.layoutOptions = { ...elkRoot.layoutOptions, ...interactiveOptions };
     for (const elkClass of elkRoot.children) {
-      const previousClass = previousLayout.children.find(({ data }) => data.id === elkClass.id);
+      const previousClass = layout.children.find(({ data }) => data.id === elkClass.id);
       if (!previousClass) {
         continue;
       }
@@ -344,7 +363,7 @@ function toELKNode(
     }
   }
 
-  return elkRoot;
+  return { elkNode: elkRoot, colors };
 }
 
 // This function takes an EGraph and returns an ELK node that can be used to layout the graph.
@@ -644,7 +663,7 @@ function LayoutFlow({
   innerElem: HTMLDivElement;
   aspectRatio: number;
 }) {
-  const previousLayoutRef = useRef<MyELKNodeLayedOut | null>(null);
+  const previousLayoutRef = useRef<{ layout: MyELKNodeLayedOut; colors: Colors } | null>(null);
   // e-class ID we have currently selected, store egraph string as well so we know if this selection is outdated
   const [selectedNodeWithEGraph, setSelectedNodeWithEGraph] = useState<{ type: "class" | "node"; id: string; egraph: string } | null>(null);
   const selectedNode = useMemo(() => {
@@ -663,7 +682,7 @@ function LayoutFlow({
   );
   const parsedEGraph: EGraph = useMemo(() => JSON.parse(egraph), [egraph]);
 
-  const elkNode = useMemo(
+  const { elkNode, colors } = useMemo(
     () => toELKNode(parsedEGraph, outerElem, innerElem, selectedNode, aspectRatio, previousLayoutRef.current),
     [parsedEGraph, outerElem, innerElem, selectedNode, aspectRatio, previousLayoutRef]
   );
@@ -672,8 +691,8 @@ function LayoutFlow({
   const layoutPromise = useMemo(() => elk.layout(elkNode) as Promise<MyELKNodeLayedOut>, [elkNode]);
   const layout = use(layoutPromise);
   useEffect(() => {
-    previousLayoutRef.current = layout;
-  }, [layout]);
+    previousLayoutRef.current = { layout, colors };
+  }, [layout, colors]);
   const edges = useMemo(() => toFlowEdges(layout), [layout]);
   const nodes = useMemo(() => toFlowNodes(layout), [layout]);
   return (
