@@ -3,4 +3,5 @@
 @tailwind utilities;
 .react-flow__node {
   z-index: -1 !important;
+  transition: transform 1s ease;
 }

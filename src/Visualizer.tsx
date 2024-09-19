@@ -540,7 +540,7 @@ function Rendering({
       if (skipNextFitRef.current) {
         skipNextFitRef.current = false;
       } else {
-        reactFlow.fitView({ padding: 0.1 });
+        reactFlow.fitView({ padding: 0.1, duration: 1000 });
       }
     }
   }, [nodeInitialized, reactFlow, skipNextFitRef]);
