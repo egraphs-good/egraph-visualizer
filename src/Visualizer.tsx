@@ -10,7 +10,7 @@ import type { EdgeChange, EdgeProps, EdgeTypes, NodeChange, NodeProps } from "@x
 import ELK, { ElkExtendedEdge, ElkNode } from "elkjs/lib/elk-api";
 import ELKWorkerURL from "elkjs/lib/elk-worker?url";
 
-import { createContext, memo, startTransition, Suspense, use, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, memo, startTransition, Suspense, use, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import {
   ReactFlow,
   ReactFlowProvider,
@@ -477,7 +477,7 @@ function Rendering({
   const [selectedEdges, setSelectedEdges] = useState<Set<string>>(new Set());
   const [selectedNodes, setSelectedNodes] = useState<Set<string>>(new Set());
   // Trigger this when we want to skip the next fitView, for example when we change selection
-  const [skipNextFit, setSkipNextFit] = useState(false);
+  const skipNextFitRef = useRef(false);
 
   const nodes = useMemo(
     () => initialNodes.map((node) => ({ ...node, selected: selectedNodes.has(node.id) })),
@@ -494,7 +494,7 @@ function Rendering({
       const newSelectedNodes = processSelectionChanges(changes, selectedNodes);
       if (newSelectedNodes) {
         setSelectedNodes(newSelectedNodes);
-        setSkipNextFit(true);
+        skipNextFitRef.current = true;
       }
     },
     [selectedNodes, setSelectedNodes]
@@ -504,7 +504,7 @@ function Rendering({
       const newSelectedEdges = processSelectionChanges(changes, selectedEdges);
       if (newSelectedEdges) {
         setSelectedEdges(newSelectedEdges);
-        setSkipNextFit(true);
+        skipNextFitRef.current = true;
       }
     },
     [selectedEdges, setSelectedEdges]
@@ -521,13 +521,13 @@ function Rendering({
   const nodeInitialized = useNodesInitialized();
   useEffect(() => {
     if (nodeInitialized) {
-      if (skipNextFit) {
-        setSkipNextFit(false);
+      if (skipNextFitRef.current) {
+        skipNextFitRef.current = false;
       } else {
         reactFlow.fitView({ padding: 0.1 });
       }
     }
-  }, [nodeInitialized, reactFlow, skipNextFit]);
+  }, [nodeInitialized, reactFlow, skipNextFitRef]);
 
   return (
     <ReactFlow
