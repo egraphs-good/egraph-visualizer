@@ -511,7 +511,7 @@ function Rendering({
         skipNextFitRef.current = true;
       }
     },
-    [selectedNodes, setSelectedNodes, nodeToEdges, selectedEdges, setSelectedEdges]
+    [selectedNodes, setSelectedNodes, nodeToEdges, setSelectedEdges]
   );
   const onEdgesChange = useCallback(
     (changes: EdgeChange<FlowEdge>[]) => {
@@ -523,7 +523,7 @@ function Rendering({
         skipNextFitRef.current = true;
       }
     },
-    [selectedEdges, setSelectedEdges, edgeToNodes, selectedNodes, setSelectedNodes]
+    [selectedEdges, setSelectedEdges, edgeToNodes, setSelectedNodes]
   );
 
   const selectNode = useContext(SetSelectedNodeContext)!;
