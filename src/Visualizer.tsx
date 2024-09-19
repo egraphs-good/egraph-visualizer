@@ -236,7 +236,6 @@ function toELKNode(
       }
     }
   }
-  console.log({ sortedTypes, availableColors });
   for (const [index, type] of sortedTypes.entries()) {
     colors.set(type, availableColors[index % availableColors.length]);
   }
