@@ -25,8 +25,6 @@ import {
   Position,
   Controls,
   Panel,
-  applyNodeChanges,
-  applyEdgeChanges,
   NodeToolbar,
 } from "@xyflow/react";
 
@@ -161,7 +159,6 @@ function toELKNode(
     }
     classToNodes.get(node.eclass)!.push([id, node]);
   }
-
   /// filter out to descendants of the selected node
   if (selectedNode) {
     const toTraverse = new Set<string>();
@@ -175,7 +172,7 @@ function toELKNode(
     }
     const traversed = new Set<string>();
     while (toTraverse.size > 0) {
-      const current: string = toTraverse.values().next().value;
+      const current: string = toTraverse.values().next().value!;
       toTraverse.delete(current);
       traversed.add(current);
       for (const childNode of classToNodes.get(current)!.flatMap(([, node]) => node.children || [])) {
@@ -400,7 +397,7 @@ export function MyNodeToolbar(node: { type: "class" | "node"; id: string }) {
         onClick={onClick}
         className="rounded bg-white px-2 py-1 text-xs font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50"
       >
-        Filter descendants
+        Filter to descendants
       </button>
     </NodeToolbar>
   );
@@ -429,12 +426,47 @@ const SetSelectedNodeContext = createContext<null | ((node: { type: "class" | "n
 //   return node.type === "class" ? node.data.color! : "white";
 // }
 
-/// Component responsible for actualyl rendeirng the graph after it has been laid out
+/// Processes changes for selection, returning a new set if any of the changes are selection changes and they change the set of selections
+function processSelectionChanges(
+  changes: (NodeChange<FlowNode | FlowClass> | EdgeChange<FlowEdge>)[],
+  currentlySelected: Set<string>
+): Set<string> | null {
+  let newSelected = null;
+  for (const change of changes) {
+    if (change.type !== "select") {
+      continue;
+    }
+    const isSelectedNow = currentlySelected.has(change.id);
+    if (change.selected) {
+      if (!isSelectedNow) {
+        if (!newSelected) {
+          newSelected = new Set(currentlySelected);
+        }
+        newSelected.add(change.id);
+      }
+    } else {
+      if (isSelectedNow) {
+        if (!newSelected) {
+          newSelected = new Set(currentlySelected);
+        }
+        newSelected.delete(change.id);
+      }
+    }
+  }
+  return newSelected;
+}
+
+const defaultEdgeOptions = { markerEnd: { type: MarkerType.ArrowClosed, color: "black" } };
+// It seems like it's OK to remove attribution if we aren't making money off our usage
+// https://reactflow.dev/learn/troubleshooting/remove-attribution
+const proOptions = { hideAttribution: true };
+
+/// Component responsible for actually rendeirng the graph after it has been laid out
 /// also responsible for
 function Rendering({
   nodes: initialNodes,
   edges: initialEdges,
-  selectedNode,
+  selectedNode: filteredNode,
   elkJSON,
 }: {
   nodes: (FlowClass | FlowNode)[];
@@ -442,27 +474,41 @@ function Rendering({
   selectedNode: { type: "class" | "node"; id: string } | null;
   elkJSON: string;
 }) {
-  const [renderedInitialNodes, setRenderedInitialNodes] = useState(initialNodes);
-  const [renderedInitialEdges, setRenderedInitialEdges] = useState(initialEdges);
-  const [nodes, setNodes] = useState(initialNodes);
-  const [edges, setEdges] = useState(initialEdges);
+  const [selectedEdges, setSelectedEdges] = useState<Set<string>>(new Set());
+  const [selectedNodes, setSelectedNodes] = useState<Set<string>>(new Set());
+  // Trigger this when we want to skip the next fitView, for example when we change selection
+  const [skipNextFit, setSkipNextFit] = useState(false);
 
-  // reset nodes when initialNodes changes
-  if (initialNodes !== renderedInitialNodes) {
-    setRenderedInitialNodes(initialNodes);
-    setNodes(initialNodes);
-  }
-  // reset edges when initialEdges changes
-  if (initialEdges !== renderedInitialEdges) {
-    setRenderedInitialEdges(initialEdges);
-    setEdges(initialEdges);
-  }
+  const nodes = useMemo(
+    () => initialNodes.map((node) => ({ ...node, selected: selectedNodes.has(node.id) })),
+    [initialNodes, selectedNodes]
+  );
+  const edges = useMemo(
+    () => initialEdges.map((edge) => ({ ...edge, selected: selectedEdges.has(edge.id) })),
+    [initialEdges, selectedEdges]
+  );
+
   // Handle node/edge selection
   const onNodesChange = useCallback(
-    (changes: NodeChange<FlowNode | FlowClass>[]) => setNodes((nds) => applyNodeChanges(changes, nds)),
-    [setNodes]
+    (changes: NodeChange<FlowNode | FlowClass>[]) => {
+      const newSelectedNodes = processSelectionChanges(changes, selectedNodes);
+      if (newSelectedNodes) {
+        setSelectedNodes(newSelectedNodes);
+        setSkipNextFit(true);
+      }
+    },
+    [selectedNodes, setSelectedNodes]
   );
-  const onEdgesChange = useCallback((changes: EdgeChange<FlowEdge>[]) => setEdges((eds) => applyEdgeChanges(changes, eds)), [setEdges]);
+  const onEdgesChange = useCallback(
+    (changes: EdgeChange<FlowEdge>[]) => {
+      const newSelectedEdges = processSelectionChanges(changes, selectedEdges);
+      if (newSelectedEdges) {
+        setSelectedEdges(newSelectedEdges);
+        setSkipNextFit(true);
+      }
+    },
+    [selectedEdges, setSelectedEdges]
+  );
 
   const selectNode = useContext(SetSelectedNodeContext)!;
   const unselectNode = useCallback(() => selectNode(null), [selectNode]);
@@ -470,14 +516,19 @@ function Rendering({
     navigator.clipboard.writeText(elkJSON);
   }, [elkJSON]);
 
-  // Fit the view when the nodes are initialized, which happens initially and after a filter
+  // Re-fit when initial nodes/edges change, but not when selection changes
   const reactFlow = useReactFlow();
-  const nodesInitialized = useNodesInitialized();
+  const nodeInitialized = useNodesInitialized();
   useEffect(() => {
-    if (nodesInitialized) {
-      reactFlow.fitView({ padding: 0.1 });
+    if (nodeInitialized) {
+      if (skipNextFit) {
+        setSkipNextFit(false);
+      } else {
+        reactFlow.fitView({ padding: 0.1 });
+      }
     }
-  }, [reactFlow, nodesInitialized]);
+  }, [nodeInitialized, reactFlow, skipNextFit]);
+
   return (
     <ReactFlow
       nodes={nodes}
@@ -493,12 +544,10 @@ function Rendering({
       onEdgesChange={onEdgesChange}
       // nodeDragThreshold={100}
       // onNodeClick={onNodeClick}
-      defaultEdgeOptions={{ markerEnd: { type: MarkerType.ArrowClosed, color: "black" } }}
-      // It seems like it's OK to remove attribution if we aren't making money off our usage
-      // https://reactflow.dev/learn/troubleshooting/remove-attribution
-      proOptions={{ hideAttribution: true }}
+      defaultEdgeOptions={defaultEdgeOptions}
+      proOptions={proOptions}
     >
-      {selectedNode ? (
+      {filteredNode ? (
         <Panel position="top-center">
           <button
             className="rounded bg-white px-2 py-1 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 hover:shadow-md hover:ring-gray-400 transition-all duration-200"
@@ -538,22 +587,21 @@ function LayoutFlow({
   aspectRatio: number;
 }) {
   // e-class ID we have currently selected, store egraph string as well so we know if this selection is outdated
-  const [privateSelectedNode, setPrivateSelectedNode] = useState<{ type: "class" | "node"; id: string; egraph: string } | null>(null);
+  const [selectedNodeWithEGraph, setSelectedNodeWithEGraph] = useState<{ type: "class" | "node"; id: string; egraph: string } | null>(null);
   const selectedNode = useMemo(() => {
-    if (privateSelectedNode && privateSelectedNode.egraph === egraph) {
-      return privateSelectedNode;
+    if (selectedNodeWithEGraph && selectedNodeWithEGraph.egraph === egraph) {
+      return selectedNodeWithEGraph;
     }
     return null;
-  }, [privateSelectedNode, egraph]);
+  }, [selectedNodeWithEGraph, egraph]);
   const setSelectedNode = useCallback(
     (node: { type: "class" | "node"; id: string } | null) => {
       startTransition(() => {
-        setPrivateSelectedNode(node ? { ...node, egraph } : null);
+        setSelectedNodeWithEGraph(node ? { ...node, egraph } : null);
       });
     },
-    [setPrivateSelectedNode, egraph]
+    [setSelectedNodeWithEGraph, egraph]
   );
-
   const parsedEGraph: EGraph = useMemo(() => JSON.parse(egraph), [egraph]);
 
   const elkNode = useMemo(
