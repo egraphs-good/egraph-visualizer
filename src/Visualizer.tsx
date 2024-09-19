@@ -337,7 +337,6 @@ function toELKNode(
     );
     // Use interactive layout if more than half the classes already have positions as a heuristic
     if ((overlappingClasses.false || []).length > (overlappingClasses.true || []).length) {
-      console.log("not using interactive layout");
       return { elkNode: elkRoot, colors };
     }
     // We have some children that were already layed out. So let's update all layout options to be interactive
