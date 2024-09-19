@@ -17,9 +17,6 @@ export default defineConfig({
         anywidget: resolve(__dirname, "src/anywidget.tsx"),
         dom: resolve(__dirname, "src/dom.tsx"),
       },
-      output: {
-        intro: 'import "./index.css";',
-      },
     },
   },
 
