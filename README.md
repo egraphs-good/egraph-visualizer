@@ -22,7 +22,7 @@ It is also published as an NPM package, which can be imported and used in the br
 ```html
 <div id="egraph-visualizer"></div>
 <script type="module">
-  import { mount } from "https://cdn.skypack.dev/egraph-visualizer";
+  import { mount } from "https://cdn.skypack.dev/egraph-visualizer?css";
   const egraph = {
     nodes: {
       "//": {
