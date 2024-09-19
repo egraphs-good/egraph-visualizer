@@ -21,8 +21,9 @@ It is also published as an NPM package, which can be imported and used in the br
 
 ```html
 <div id="egraph-visualizer"></div>
+<link rel="stylesheet" href="https://esm.sh/egraph-visualizer/dist/style.css" />
 <script type="module">
-  import { mount } from "https://cdn.skypack.dev/egraph-visualizer?css";
+  import { mount } from "https://esm.sh/egraph-visualizer";
   const egraph = {
     nodes: {
       "//": {

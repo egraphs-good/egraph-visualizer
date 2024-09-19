@@ -5,10 +5,6 @@
     "type": "git",
     "url": "https://github.com/saulshanabrook/egraph-visualizer.git"
   },
-  "exports": {
-    ".": "./dist/dom.js",
-    "./egraph-visualizer.css": "./dist/style.css"
-  },
   "type": "module",
   "scripts": {
     "dev": "vite",
