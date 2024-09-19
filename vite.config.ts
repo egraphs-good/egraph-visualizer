@@ -8,13 +8,14 @@ export default defineConfig({
   plugins: [react()],
   build: {
     lib: {
-      entry: [resolve(__dirname, "src/anywidget.tsx")],
+      entry: [resolve(__dirname, "src/anywidget.tsx"), resolve(__dirname, "src/dom.tsx")],
       formats: ["es"],
     },
     rollupOptions: {
       input: {
         main: resolve(__dirname, "index.html"),
         anywidget: resolve(__dirname, "src/anywidget.tsx"),
+        dom: resolve(__dirname, "src/dom.tsx"),
       },
     },
   },
