@@ -1,6 +1,6 @@
 /// <reference types="react/canary" />
 
-import { startTransition, use, useEffect, useMemo, useState } from "react";
+import { startTransition, useCallback, useState } from "react";
 import MonacoEditor from "react-monaco-editor";
 
 const examples = {
@@ -11,26 +11,25 @@ const examples = {
 
 const defaultExample = "/examples/manual/homepage.json";
 
-function Monaco({ code, setCode }: { code: string; setCode: (code: string) => void }) {
+function Monaco({ code, setCode }: { code: string; setCode: (code: Promise<string>) => void }) {
   const [selectedPreset, setSelectedPreset] = useState(defaultExample);
-  const [loadPreset, setLoadPreset] = useState(false);
-  const handlePresetChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
-    const preset = event.target.value;
-    startTransition(() => {
+  const handlePresetChange = useCallback(
+    (event: React.ChangeEvent<HTMLSelectElement>) => {
+      const preset = event.target.value;
       setSelectedPreset(preset);
-      setLoadPreset(true);
-    });
-  };
-  const presetPromise = useMemo(() => (loadPreset ? examples[selectedPreset]() : null), [selectedPreset, loadPreset]);
-  const loadedPreset = presetPromise ? use(presetPromise) : null;
+      setCode(examples[preset]().then((loaded) => (loaded as { default: string }).default));
+    },
+    [setCode, setSelectedPreset]
+  );
 
-  useEffect(() => {
-    if (loadedPreset) {
-      const codeStr = (loadedPreset as { default: string }).default;
-      setCode(JSON.stringify(JSON.parse(codeStr), null, 2));
-      setLoadPreset(false);
-    }
-  }, [loadedPreset, setCode, setLoadPreset]);
+  const setCodeString = useCallback(
+    (code: string) => {
+      startTransition(() => {
+        setCode(Promise.resolve(code));
+      });
+    },
+    [setCode]
+  );
 
   return (
     <div className="flex flex-col h-full w-full">
@@ -48,7 +47,7 @@ function Monaco({ code, setCode }: { code: string; setCode: (code: string) => vo
         language="json"
         theme="vs-dark"
         value={code}
-        onChange={setCode}
+        onChange={setCodeString}
         width="100%"
         height="100%"
         defaultValue=""
