@@ -7,6 +7,7 @@ export default defineConfig({
   base: "/egraph-visualizer/",
   plugins: [react()],
   build: {
+    assetsInlineLimit: (path) => !path.includes("elk-worker"),
     lib: {
       entry: [resolve(__dirname, "src/anywidget.tsx"), resolve(__dirname, "src/dom.tsx")],
       formats: ["es"],

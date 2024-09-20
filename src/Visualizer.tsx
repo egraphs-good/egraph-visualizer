@@ -8,7 +8,7 @@ import { ErrorBoundary } from "react-error-boundary";
 import type { EdgeChange, EdgeProps, EdgeTypes, NodeChange, NodeProps } from "@xyflow/react";
 
 import ELK, { ElkExtendedEdge, ElkNode } from "elkjs/lib/elk-api";
-import ELKWorkerURL from "elkjs/lib/elk-worker?url";
+import ELKWorker from "elkjs/lib/elk-worker?worker";
 
 import { createContext, memo, startTransition, Suspense, use, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -29,7 +29,6 @@ import {
 } from "@xyflow/react";
 
 import "@xyflow/react/dist/style.css";
-
 // Elk has a *huge* amount of options to configure. To see everything you can
 // tweak check out:
 //
@@ -77,7 +76,8 @@ const nodeLayoutOptions = {
 };
 
 const elk = new ELK({
-  workerUrl: ELKWorkerURL,
+  workerFactory: () => new ELKWorker(),
+  workerUrl: "",
 });
 type EGraphNodeID = string;
 type EGraphClassID = string;
