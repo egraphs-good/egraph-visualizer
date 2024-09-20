@@ -8,7 +8,8 @@ import { ErrorBoundary } from "react-error-boundary";
 import type { EdgeChange, EdgeProps, EdgeTypes, NodeChange, NodeProps } from "@xyflow/react";
 
 import ELK, { ElkExtendedEdge, ElkNode } from "elkjs/lib/elk-api";
-import ELKWorker from "elkjs/lib/elk-worker?worker";
+// Make worker inline because if its external cannot be loaded from esm.sh due to CORS
+import ELKWorker from "elkjs/lib/elk-worker?worker&inline";
 
 import { createContext, memo, startTransition, Suspense, use, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import {
