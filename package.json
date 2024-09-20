@@ -1,6 +1,6 @@
 {
   "name": "egraph-visualizer",
-  "version": "1.0.3",
+  "version": "1.1.0",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/saulshanabrook/egraph-visualizer.git"

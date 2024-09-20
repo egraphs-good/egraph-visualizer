@@ -1,25 +1,24 @@
-import { useSyncExternalStore } from "react";
 import { createRoot } from "react-dom/client";
 import "./index.css";
 import { DOMWidgetModel } from "@jupyter-widgets/base";
 import Visualizer from "./Visualizer.tsx";
-
-// eslint-disable-next-line react-refresh/only-export-components
-function ModelApp({ model }: { model: DOMWidgetModel }) {
-  const egraph: string = useSyncExternalStore(
-    (callback) => {
-      model.on("change:egraph", callback);
-      return () => model.off("change:egraph", callback);
-    },
-    () => model.get("egraph")
-  );
-  return <Visualizer egraph={egraph} />;
-}
+import { startTransition } from "react";
 
 function render({ model, el }: { el: HTMLElement; model: DOMWidgetModel }) {
   const root = createRoot(el);
-  root.render(<ModelApp model={model} />);
-  return () => root.unmount();
+  const height = model.has("height") ? model.get("height") : "600px";
+  function render() {
+    startTransition(() => {
+      root.render(<Visualizer egraph={model.get("egraph")} height={height} resize />);
+    });
+  }
+  render();
+  model.on("change:egraph", render);
+
+  return () => {
+    model.off("change:egraph", render);
+    root.unmount();
+  };
 }
 
 export default { render };

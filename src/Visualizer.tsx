@@ -701,7 +701,7 @@ function LayoutFlow({
   );
 }
 
-function Visualizer({ egraph }: { egraph: string }) {
+function Visualizer({ egraph, height = null, resize = false }: { egraph: string; height?: string | null; resize?: boolean }) {
   const [outerElem, setOuterElem] = useState<HTMLDivElement | null>(null);
   const [innerElem, setInnerElem] = useState<HTMLDivElement | null>(null);
 
@@ -713,7 +713,7 @@ function Visualizer({ egraph }: { egraph: string }) {
     }
   }, [rootElem]);
   return (
-    <div className="w-full h-full" ref={setRootElem}>
+    <div className={`w-full ${resize ? "resize-y" : ""}`} style={{ height: height || "100%" }} ref={setRootElem}>
       {/* Hidden node to measure text size  */}
       <div className="invisible absolute">
         <ENode outerRef={setOuterElem} innerRef={setInnerElem} />
