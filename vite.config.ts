@@ -5,7 +5,7 @@ import react from "@vitejs/plugin-react";
 // https://vitejs.dev/config/
 export default defineConfig({
   plugins: [react()],
-  base: "./dist/",
+  base: "./",
   build: {
     assetsInlineLimit: (path) => !path.includes("elk-worker"),
     lib: {
