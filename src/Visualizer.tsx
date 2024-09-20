@@ -30,6 +30,8 @@ import {
 } from "@xyflow/react";
 
 import "@xyflow/react/dist/style.css";
+import { AnyModel } from "@anywidget/types";
+import { createRoot } from "react-dom/client";
 // Elk has a *huge* amount of options to configure. To see everything you can
 // tweak check out:
 //
@@ -701,7 +703,7 @@ function LayoutFlow({
   );
 }
 
-function Visualizer({ egraph, height = null, resize = false }: { egraph: string; height?: string | null; resize?: boolean }) {
+export function Visualizer({ egraph, height = null, resize = false }: { egraph: string; height?: string | null; resize?: boolean }) {
   const [outerElem, setOuterElem] = useState<HTMLDivElement | null>(null);
   const [innerElem, setInnerElem] = useState<HTMLDivElement | null>(null);
 
@@ -731,4 +733,43 @@ function Visualizer({ egraph, height = null, resize = false }: { egraph: string;
   );
 }
 
-export default Visualizer;
+// Put these both in one file, so its emitted as a single chunk and anywidget doesn't have to import another file
+
+/// Render anywidget model to the given element
+// Must be named `render` to work as an anywidget module
+// https://anywidget.dev/en/afm/#lifecycle-methods
+// eslint-disable-next-line react-refresh/only-export-components
+export function render({ model, el }: { el: HTMLElement; model: AnyModel }) {
+  const root = createRoot(el);
+  function render() {
+    startTransition(() => {
+      root.render(<Visualizer egraph={model.get("egraph")} height="600px" resize />);
+    });
+  }
+  render();
+  model.on("change:egraph", render);
+
+  return () => {
+    model.off("change:egraph", render);
+    root.unmount();
+  };
+}
+
+/// Mount the visualizer to the given element
+/// Call `render` to render a new egraph
+/// Call `unmount` to unmount the visualizer
+// eslint-disable-next-line react-refresh/only-export-components
+export function mount(element: HTMLElement): { render: (egraph: string) => void; unmount: () => void } {
+  const root = createRoot(element);
+
+  function render(egraph: string) {
+    startTransition(() => {
+      root.render(<Visualizer egraph={egraph} />);
+    });
+  }
+
+  function unmount() {
+    root.unmount();
+  }
+  return { render, unmount };
+}

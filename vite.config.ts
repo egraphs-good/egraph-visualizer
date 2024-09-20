@@ -8,15 +8,16 @@ export default defineConfig({
   base: "./",
   build: {
     lib: {
-      entry: [resolve(__dirname, "src/anywidget.tsx"), resolve(__dirname, "src/dom.tsx")],
+      entry: [resolve(__dirname, "src/Visualizer.tsx")],
       formats: ["es"],
     },
     rollupOptions: {
       input: {
         main: resolve(__dirname, "index.html"),
-        anywidget: resolve(__dirname, "src/anywidget.tsx"),
-        dom: resolve(__dirname, "src/dom.tsx"),
+        index: resolve(__dirname, "src/Visualizer.tsx"),
       },
+      // allow extension of entry signatures so Visualizer.tsx can be outputed as index.js and not include any imports
+      preserveEntrySignatures: "allow-extension",
     },
   },
 
