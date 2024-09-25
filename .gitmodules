@@ -4,3 +4,6 @@
 [submodule "examples/egraph-serialize"]
 	path = examples/egraph-serialize
 	url = https://github.com/egraphs-good/egraph-serialize
+[submodule "src/react-aria-components-tailwind-starter"]
+	path = src/react-aria-components-tailwind-starter
+	url = https://github.com/zaichaopan/react-aria-components-tailwind-starter.git

@@ -1,7 +1,7 @@
 /// <reference types="react/canary" />
 
 import "@xyflow/react/dist/style.css";
-import { CodeBracketIcon } from "@heroicons/react/24/outline";
+import { ArrowLongRightIcon, ArrowUturnRightIcon, ClipboardDocumentListIcon } from "@heroicons/react/24/outline";
 
 import { scheme } from "vega-scale";
 import { ErrorBoundary } from "react-error-boundary";
@@ -32,6 +32,10 @@ import {
 import "@xyflow/react/dist/style.css";
 import { AnyModel } from "@anywidget/types";
 import { createRoot } from "react-dom/client";
+import { AccessibleIcon } from "./react-aria-components-tailwind-starter/src/accessible-icon";
+import { Tooltip, TooltipTrigger } from "./react-aria-components-tailwind-starter/src/tooltip";
+import { ToggleButton } from "./react-aria-components-tailwind-starter/src/button";
+import { CopyButton } from "./react-aria-components-tailwind-starter/src/clipboard";
 // Elk has a *huge* amount of options to configure. To see everything you can
 // tweak check out:
 //
@@ -530,11 +534,15 @@ function Rendering({
   edges: initialEdges,
   selectedNode: filteredNode,
   elkJSON,
+  useInteractiveLayout,
+  setUseInteractiveLayout,
 }: {
   nodes: (FlowClass | FlowNode)[];
   edges: FlowEdge[];
   selectedNode: { type: "class" | "node"; id: string } | null;
   elkJSON: string;
+  useInteractiveLayout: boolean;
+  setUseInteractiveLayout: (value: boolean) => void;
 }) {
   const nodeToEdges = useMemo(() => {
     // Each node is a source for some edges and a target for others, no node will be both a target and a source
@@ -590,9 +598,6 @@ function Rendering({
 
   const selectNode = useContext(SetSelectedNodeContext)!;
   const unselectNode = useCallback(() => selectNode(null), [selectNode]);
-  const onClickToELK = useCallback(() => {
-    navigator.clipboard.writeText(elkJSON);
-  }, [elkJSON]);
 
   // Re-fit when initial nodes/edges change, but not when selection changes
   const reactFlow = useReactFlow();
@@ -638,11 +643,23 @@ function Rendering({
         <></>
       )}
       <Panel position="top-right">
-        <CodeBracketIcon
-          title="Copy ELK JSON"
-          className="h-6 w-6 cursor-pointer hover:text-blue-500 transition-colors duration-200"
-          onClick={onClickToELK}
-        />
+        <div className="flex gap-2">
+          <TooltipTrigger>
+            <ToggleButton variant="plain" isSelected={useInteractiveLayout} onChange={setUseInteractiveLayout}>
+              <AccessibleIcon aria-label="Use interactive layout">
+                {useInteractiveLayout ? <ArrowUturnRightIcon className="size-6" /> : <ArrowLongRightIcon className="size-6" />}
+              </AccessibleIcon>
+            </ToggleButton>
+            <Tooltip>
+              {useInteractiveLayout ? "Layout independently of previous positions" : "Layout interactively based on previous positions"}
+            </Tooltip>
+          </TooltipTrigger>
+          <CopyButton copyText={elkJSON} label="Copy ELK JSON">
+            <AccessibleIcon aria-label="Copy">
+              <ClipboardDocumentListIcon className="size-6" />
+            </AccessibleIcon>
+          </CopyButton>
+        </div>
       </Panel>
 
       {/* <Background /> */}
@@ -664,6 +681,7 @@ function LayoutFlow({
   innerElem: HTMLDivElement;
   aspectRatio: number;
 }) {
+  const [useInteractiveLayout, setUseInteractiveLayout] = useState(false);
   const previousLayoutRef = useRef<{ layout: MyELKNodeLayedOut; colors: Colors } | null>(null);
   // e-class ID we have currently selected, store egraph string as well so we know if this selection is outdated
   const [selectedNodeWithEGraph, setSelectedNodeWithEGraph] = useState<{ type: "class" | "node"; id: string; egraph: string } | null>(null);
@@ -684,8 +702,8 @@ function LayoutFlow({
   const parsedEGraph: EGraph = useMemo(() => JSON.parse(egraph), [egraph]);
 
   const { elkNode, colors } = useMemo(
-    () => toELKNode(parsedEGraph, outerElem, innerElem, selectedNode, aspectRatio, previousLayoutRef.current),
-    [parsedEGraph, outerElem, innerElem, selectedNode, aspectRatio, previousLayoutRef]
+    () => toELKNode(parsedEGraph, outerElem, innerElem, selectedNode, aspectRatio, useInteractiveLayout ? previousLayoutRef.current : null),
+    [parsedEGraph, outerElem, innerElem, selectedNode, aspectRatio, previousLayoutRef, useInteractiveLayout]
   );
   const beforeLayout = useMemo(() => JSON.stringify(elkNode, null, 2), [elkNode]);
 
@@ -698,7 +716,14 @@ function LayoutFlow({
   const nodes = useMemo(() => toFlowNodes(layout), [layout]);
   return (
     <SetSelectedNodeContext.Provider value={setSelectedNode}>
-      <Rendering nodes={nodes} edges={edges} selectedNode={selectedNode} elkJSON={beforeLayout} />
+      <Rendering
+        nodes={nodes}
+        edges={edges}
+        selectedNode={selectedNode}
+        elkJSON={beforeLayout}
+        useInteractiveLayout={useInteractiveLayout}
+        setUseInteractiveLayout={useCallback((value) => startTransition(() => setUseInteractiveLayout(value)), [setUseInteractiveLayout])}
+      />
     </SetSelectedNodeContext.Provider>
   );
 }
