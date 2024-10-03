@@ -1,16 +1,8 @@
 # EGraph Visualizer
 
-Interactive visualizer for e-graphs in [the serialized JSON format](https://github.com/egraphs-good/egraph-serialize/)
-using Cytoscape JS and Eclipse Layout Kernel.
+This packages aims to help with debugging and teaching e-graphs through an interactive visualization.
 
-## Development
-
-First install [Yarn](https://yarnpkg.com/getting-started/install), then run:
-
-```sh
-yarn install
-yarn run [build|start|lint]
-```
+It supports any e-graph [serialized in the JSON format](https://github.com/egraphs-good/egraph-serialize/)
 
 ## Packaging
 
@@ -73,3 +65,19 @@ It is also published as an NPM package, which can be imported and used in the br
 
 There is also a demo site published on Github Pages, which allows you to upload and edit a serialized e-graph and see
 the visualization.
+
+## Development
+
+First install [Yarn](https://yarnpkg.com/getting-started/install), then run:
+
+```sh
+yarn install
+yarn run [build|start|lint]
+```
+
+## Contributing
+
+This package is open to external contributors. Feel free to open a pull request or an issue for bugs or desired features.
+It is developed as part of the EGRAPHS community and can also be discussed in the [EGRAPHS zulip](https://egraphs.org/zulip/).
+
+@saulshanabrook is the current maintainor of this package, but others can be added after contributing.
