@@ -1,7 +1,14 @@
 /// <reference types="react/canary" />
 
 import "@xyflow/react/dist/style.css";
-import { ArrowLongRightIcon, ArrowUturnRightIcon, ClipboardDocumentListIcon } from "@heroicons/react/24/outline";
+import {
+  ArrowLongRightIcon,
+  ArrowUturnRightIcon,
+  Bars2Icon,
+  ChevronRightIcon,
+  ClipboardDocumentListIcon,
+  CogIcon,
+} from "@heroicons/react/24/outline";
 
 import { scheme } from "vega-scale";
 import { ErrorBoundary } from "react-error-boundary";
@@ -33,9 +40,17 @@ import "@xyflow/react/dist/style.css";
 import { AnyModel } from "@anywidget/types";
 import { createRoot } from "react-dom/client";
 import { AccessibleIcon } from "./react-aria-components-tailwind-starter/src/accessible-icon";
-import { Tooltip, TooltipTrigger } from "./react-aria-components-tailwind-starter/src/tooltip";
-import { ToggleButton } from "./react-aria-components-tailwind-starter/src/button";
-import { CopyButton } from "./react-aria-components-tailwind-starter/src/clipboard";
+import {
+  Menu,
+  MenuButton,
+  MenuItem,
+  MenuItemDescription,
+  MenuItemLabel,
+  MenuPopover,
+  MenuSeparator,
+  MenuTrigger,
+} from "./react-aria-components-tailwind-starter/src/menu";
+import { useCopyToClipboard } from "./react-aria-components-tailwind-starter/src/hooks/use-clipboard";
 // Elk has a *huge* amount of options to configure. To see everything you can
 // tweak check out:
 //
@@ -47,6 +62,7 @@ const rootLayoutOptions = {
   "elk.direction": "DOWN",
   // This seems to result in a more compact layout
   "elk.layered.nodePlacement.strategy": "NETWORK_SIMPLEX",
+  "elk.layered.mergeEdges": "true",
 
   // Can you use spline routing instead which generates non orthogonal edges
   // "elk.edgeRouting": "SPLINES",
@@ -167,7 +183,8 @@ function toELKNode(
   innerElem: HTMLDivElement,
   selectedNode: { type: "class" | "node"; id: string } | null,
   aspectRatio: number,
-  previousLayout: { layout: MyELKNodeLayedOut; colors: Colors } | null
+  previousLayout: { layout: MyELKNodeLayedOut; colors: Colors } | null,
+  mergeEdges: boolean
 ): { elkNode: MyELKNode; colors: Colors } {
   const nodeToClass = new Map<EGraphNodeID, EGraphClassID>();
   const classToNodes = new Map<EGraphClassID, [EGraphNodeID, EGraphNode][]>();
@@ -262,9 +279,11 @@ function toELKNode(
       data: { color: colors.get(class_data[classID]?.type)!, id: classID },
       layoutOptions: classLayoutOptions,
       children: [],
-      ports: (incomingEdges.get(classID) || []).map(({ nodeID, index }) => ({
-        id: `port-class-incoming-${nodeID}-${index}`,
-      })),
+      ports: mergeEdges
+        ? []
+        : (incomingEdges.get(classID) || []).map(({ nodeID, index }) => ({
+            id: `port-class-incoming-${nodeID}-${index}`,
+          })),
 
       edges: [],
     };
@@ -330,7 +349,7 @@ function toELKNode(
           sourceNode: elkNodeID,
           targetNode: elkTargetClassID,
           sources: [elkClassOutgoingPortID],
-          targets: [elkClassIncomingPortID],
+          targets: [mergeEdges ? elkTargetClassID : elkClassIncomingPortID],
         });
       }
     }
@@ -536,6 +555,8 @@ function Rendering({
   elkJSON,
   useInteractiveLayout,
   setUseInteractiveLayout,
+  mergeEdges,
+  setMergeEdges,
 }: {
   nodes: (FlowClass | FlowNode)[];
   edges: FlowEdge[];
@@ -543,6 +564,8 @@ function Rendering({
   elkJSON: string;
   useInteractiveLayout: boolean;
   setUseInteractiveLayout: (value: boolean) => void;
+  mergeEdges: boolean;
+  setMergeEdges: (value: boolean) => void;
 }) {
   const nodeToEdges = useMemo(() => {
     // Each node is a source for some edges and a target for others, no node will be both a target and a source
@@ -612,6 +635,8 @@ function Rendering({
     }
   }, [nodeInitialized, reactFlow, skipNextFitRef]);
 
+  const [isOpen, setOpen] = useState(false);
+  const clipboard = useCopyToClipboard();
   return (
     <ReactFlow
       nodes={nodes}
@@ -643,23 +668,49 @@ function Rendering({
         <></>
       )}
       <Panel position="top-right">
-        <div className="flex gap-2">
-          <TooltipTrigger>
-            <ToggleButton variant="plain" isSelected={useInteractiveLayout} onChange={setUseInteractiveLayout}>
-              <AccessibleIcon aria-label="Use interactive layout">
-                {useInteractiveLayout ? <ArrowUturnRightIcon className="size-6" /> : <ArrowLongRightIcon className="size-6" />}
-              </AccessibleIcon>
-            </ToggleButton>
-            <Tooltip>
-              {useInteractiveLayout ? "Layout independently of previous positions" : "Layout interactively based on previous positions"}
-            </Tooltip>
-          </TooltipTrigger>
-          <CopyButton copyText={elkJSON} label="Copy ELK JSON">
-            <AccessibleIcon aria-label="Copy">
-              <ClipboardDocumentListIcon className="size-6" />
+        <MenuTrigger>
+          <MenuButton onPress={() => setOpen((prev) => !prev)} noIndicator variant="plain" isIconOnly>
+            <AccessibleIcon aria-label="Open setting menu">
+              <CogIcon className="size-6" />
             </AccessibleIcon>
-          </CopyButton>
-        </div>
+          </MenuButton>
+          <MenuPopover placement="bottom right" isOpen={isOpen} onOpenChange={setOpen}>
+            <Menu>
+              <MenuItem
+                onAction={useCallback(
+                  () => setUseInteractiveLayout(!useInteractiveLayout),
+                  [setUseInteractiveLayout, useInteractiveLayout]
+                )}
+                className="cursor-pointer"
+              >
+                <AccessibleIcon>{useInteractiveLayout ? <ArrowUturnRightIcon /> : <ArrowLongRightIcon />}</AccessibleIcon>
+                <MenuItemLabel>Interactive layout</MenuItemLabel>
+                <MenuItemDescription>
+                  {useInteractiveLayout ? "Layout independently of previous positions" : "Layout interactively based on previous positions"}
+                </MenuItemDescription>
+              </MenuItem>
+              <MenuItem onAction={useCallback(() => setMergeEdges(!mergeEdges), [setMergeEdges, mergeEdges])} className="cursor-pointer">
+                <AccessibleIcon>{mergeEdges ? <ChevronRightIcon /> : <Bars2Icon />}</AccessibleIcon>
+                <MenuItemLabel>Merge edges</MenuItemLabel>
+                <MenuItemDescription>{mergeEdges ? "Seperate ports for incoming edges" : "Merge all incoming edges"}</MenuItemDescription>
+              </MenuItem>
+              <MenuSeparator />
+              <MenuItem onAction={useCallback(() => clipboard.copy(elkJSON), [elkJSON, clipboard])} className="cursor-pointer">
+                <AccessibleIcon>
+                  <ClipboardDocumentListIcon />
+                </AccessibleIcon>
+                <MenuItemLabel>Copy ELK</MenuItemLabel>
+                <MenuItemDescription>
+                  {clipboard.copied
+                    ? "Copied ELK JSON to clipboard"
+                    : clipboard.error
+                    ? `Failed to copy ELK JSON to clipboard ${clipboard.error.message}`
+                    : "Copy ELK JSON to clipboard"}
+                </MenuItemDescription>
+              </MenuItem>
+            </Menu>
+          </MenuPopover>
+        </MenuTrigger>
       </Panel>
 
       {/* <Background /> */}
@@ -682,6 +733,7 @@ function LayoutFlow({
   aspectRatio: number;
 }) {
   const [useInteractiveLayout, setUseInteractiveLayout] = useState(false);
+  const [mergeEdges, setMergeEdges] = useState(false);
   const previousLayoutRef = useRef<{ layout: MyELKNodeLayedOut; colors: Colors } | null>(null);
   // e-class ID we have currently selected, store egraph string as well so we know if this selection is outdated
   const [selectedNodeWithEGraph, setSelectedNodeWithEGraph] = useState<{ type: "class" | "node"; id: string; egraph: string } | null>(null);
@@ -702,8 +754,17 @@ function LayoutFlow({
   const parsedEGraph: EGraph = useMemo(() => JSON.parse(egraph), [egraph]);
 
   const { elkNode, colors } = useMemo(
-    () => toELKNode(parsedEGraph, outerElem, innerElem, selectedNode, aspectRatio, useInteractiveLayout ? previousLayoutRef.current : null),
-    [parsedEGraph, outerElem, innerElem, selectedNode, aspectRatio, previousLayoutRef, useInteractiveLayout]
+    () =>
+      toELKNode(
+        parsedEGraph,
+        outerElem,
+        innerElem,
+        selectedNode,
+        aspectRatio,
+        useInteractiveLayout ? previousLayoutRef.current : null,
+        mergeEdges
+      ),
+    [parsedEGraph, outerElem, innerElem, selectedNode, aspectRatio, previousLayoutRef, useInteractiveLayout, mergeEdges]
   );
   const beforeLayout = useMemo(() => JSON.stringify(elkNode, null, 2), [elkNode]);
 
@@ -723,6 +784,8 @@ function LayoutFlow({
         elkJSON={beforeLayout}
         useInteractiveLayout={useInteractiveLayout}
         setUseInteractiveLayout={useCallback((value) => startTransition(() => setUseInteractiveLayout(value)), [setUseInteractiveLayout])}
+        mergeEdges={mergeEdges}
+        setMergeEdges={useCallback((value) => startTransition(() => setMergeEdges(value)), [setMergeEdges])}
       />
     </SetSelectedNodeContext.Provider>
   );
