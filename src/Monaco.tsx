@@ -1,7 +1,8 @@
 /// <reference types="react/canary" />
 
-import { startTransition, useCallback, useState } from "react";
+import { startTransition, TransitionStartFunction, useCallback, useState } from "react";
 import MonacoEditor from "react-monaco-editor";
+import { useDebouncedCallback } from "use-debounce";
 
 const examples = {
   ...import.meta.glob("/examples/manual/*.json", { query: "?raw" }),
@@ -11,7 +12,15 @@ const examples = {
 
 const defaultExample = "/examples/manual/homepage.json";
 
-function Monaco({ code, setCode }: { code: string; setCode: (code: Promise<string>) => void }) {
+function Monaco({
+  code,
+  setCode,
+  startTransition,
+}: {
+  code: string;
+  setCode: (code: Promise<string> | string) => void;
+  startTransition: TransitionStartFunction;
+}) {
   const [selectedPreset, setSelectedPreset] = useState(defaultExample);
   const handlePresetChange = useCallback(
     (event: React.ChangeEvent<HTMLSelectElement>) => {
@@ -22,14 +31,10 @@ function Monaco({ code, setCode }: { code: string; setCode: (code: Promise<strin
     [setCode, setSelectedPreset]
   );
 
-  const setCodeString = useCallback(
-    (code: string) => {
-      startTransition(() => {
-        setCode(Promise.resolve(code));
-      });
-    },
-    [setCode]
-  );
+  const setCodeString = useDebouncedCallback((code: string) => {
+    startTransition(() => setCode(code));
+    // setCode(code);
+  }, 500);
 
   return (
     <div className="flex flex-col h-full w-full">

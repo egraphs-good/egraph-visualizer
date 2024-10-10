@@ -3187,12 +3187,12 @@ react-aria@^3.34.3:
     "@react-aria/visually-hidden" "^3.8.15"
     "@react-types/shared" "^3.24.1"
 
-react-dom@19.0.0-rc-fa6eab58-20240815:
-  version "19.0.0-rc-fa6eab58-20240815"
-  resolved "https://registry.yarnpkg.com/react-dom/-/react-dom-19.0.0-rc-fa6eab58-20240815.tgz#7bc16e3000da34dd1aec8403dddbb5b4fa7a92b7"
-  integrity sha512-xt0hdkadIFmoPIEz7KF33Wn/tdOBG83O4B9PgKvPzmr24TW1SM8UZPCFwm8Jym4uy+q9SKsH5r6fCwaJQnN+Gw==
+react-dom@19.0.0-rc-77f43893-20241010:
+  version "19.0.0-rc-77f43893-20241010"
+  resolved "https://registry.yarnpkg.com/react-dom/-/react-dom-19.0.0-rc-77f43893-20241010.tgz#c2f169a1169bafea42f6d823a90fe668c78e72fb"
+  integrity sha512-QN21de3FXs+74kCiOvg0UUtjAE7To8h6PNCY06FUPneT0EZxpPzhZ53zG7HgkQOzvQxC2rXTkrgAQQO8SarZIA==
   dependencies:
-    scheduler "0.25.0-rc-fa6eab58-20240815"
+    scheduler "0.25.0-rc-77f43893-20241010"
 
 react-error-boundary@4.0.13:
   version "4.0.13"
@@ -3247,10 +3247,10 @@ react-stately@^3.32.2:
     "@react-stately/tree" "^3.8.4"
     "@react-types/shared" "^3.24.1"
 
-react@19.0.0-rc-fa6eab58-20240815:
-  version "19.0.0-rc-fa6eab58-20240815"
-  resolved "https://registry.yarnpkg.com/react/-/react-19.0.0-rc-fa6eab58-20240815.tgz#e8454f16f039b7e742141552647e264d5cc6bb12"
-  integrity sha512-AriCxVCs4pg8vKMM02O/aztA2CNU/lapNM+sgPGylG+R6giskWqMK2n0DKnF60t8omu8vvaXMQrZOLJ1/Uf1dQ==
+react@19.0.0-rc-77f43893-20241010:
+  version "19.0.0-rc-77f43893-20241010"
+  resolved "https://registry.yarnpkg.com/react/-/react-19.0.0-rc-77f43893-20241010.tgz#7edd597e0b80fd2d0c91c6c29ea24a77dd1010c9"
+  integrity sha512-INjN3PVyRkIBP6dJ7dOqppZpBKGgzZ+T+F3Jc508Y7XrxierXVwsLdeihbO8sg7bN0rku0ralZAZCX08Q7Vuag==
 
 read-cache@^1.0.0:
   version "1.0.0"
@@ -3322,10 +3322,10 @@ run-parallel@^1.1.9:
   dependencies:
     queue-microtask "^1.2.2"
 
-scheduler@0.25.0-rc-fa6eab58-20240815:
-  version "0.25.0-rc-fa6eab58-20240815"
-  resolved "https://registry.yarnpkg.com/scheduler/-/scheduler-0.25.0-rc-fa6eab58-20240815.tgz#c39398f2ccf10e45d0927bca0657462bfd87cef7"
-  integrity sha512-XbQe3jnPIT7qkzz9lN6Q200sS+60bXxdFgUFN/6UQwXo4kR0mDPeByw/zrGIDQGyTiiHWlNjECS/L4cuD8cHrg==
+scheduler@0.25.0-rc-77f43893-20241010:
+  version "0.25.0-rc-77f43893-20241010"
+  resolved "https://registry.yarnpkg.com/scheduler/-/scheduler-0.25.0-rc-77f43893-20241010.tgz#17f18827a3acf3abd89a7a2a1a683e64f37026f5"
+  integrity sha512-jEc3mbQvTCOJZhTrxNMBzU/ZBZA6eq2vNb3xgxZwjd5f2U8l4nuaZzOLc+DGtPIfSVfHqzVpgev2i0UZoCnNvQ==
 
 semver@^6.3.1:
   version "6.3.1"
@@ -3578,6 +3578,11 @@ uri-js@^4.2.2:
   integrity sha512-7rKUyy33Q1yc98pQ1DAmLtwX109F7TIfWlW1Ydo8Wl1ii1SeHieeh0HHfPeL2fMXK6z0s8ecKs9frCuLJvndBg==
   dependencies:
     punycode "^2.1.0"
+
+use-debounce@10.0.3:
+  version "10.0.3"
+  resolved "https://registry.yarnpkg.com/use-debounce/-/use-debounce-10.0.3.tgz#636094a37f7aa2bcc77b26b961481a0b571bf7ea"
+  integrity sha512-DxQSI9ZKso689WM1mjgGU3ozcxU1TJElBJ3X6S4SMzMNcm2lVH0AHmyXB+K7ewjz2BSUKJTDqTcwtSMRfB89dg==
 
 use-sync-external-store@1.2.2, use-sync-external-store@^1.2.0:
   version "1.2.2"

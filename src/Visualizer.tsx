@@ -18,7 +18,20 @@ import ELK, { ElkExtendedEdge, ElkNode } from "elkjs/lib/elk-api";
 // Make worker inline because if its external cannot be loaded from esm.sh due to CORS
 import ELKWorker from "elkjs/lib/elk-worker?worker&inline";
 
-import { createContext, memo, startTransition, Suspense, use, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import {
+  createContext,
+  memo,
+  Suspense,
+  TransitionStartFunction,
+  use,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useTransition,
+} from "react";
 import {
   ReactFlow,
   ReactFlowProvider,
@@ -51,6 +64,9 @@ import {
   MenuTrigger,
 } from "./react-aria-components-tailwind-starter/src/menu";
 import { useCopyToClipboard } from "./react-aria-components-tailwind-starter/src/hooks/use-clipboard";
+import { Modal } from "./react-aria-components-tailwind-starter/src/modal";
+import { Text } from "./react-aria-components-tailwind-starter/src/text";
+import { Dialog, DialogBody, DialogFooter, DialogHeader } from "./react-aria-components-tailwind-starter/src/dialog";
 // Elk has a *huge* amount of options to configure. To see everything you can
 // tweak check out:
 //
@@ -726,11 +742,13 @@ function LayoutFlow({
   outerElem,
   innerElem,
   aspectRatio,
+  startTransition,
 }: {
   egraph: string;
   outerElem: HTMLDivElement;
   innerElem: HTMLDivElement;
   aspectRatio: number;
+  startTransition: TransitionStartFunction;
 }) {
   const [useInteractiveLayout, setUseInteractiveLayout] = useState(false);
   const [mergeEdges, setMergeEdges] = useState(false);
@@ -749,7 +767,7 @@ function LayoutFlow({
         setSelectedNodeWithEGraph(node ? { ...node, egraph } : null);
       });
     },
-    [setSelectedNodeWithEGraph, egraph]
+    [setSelectedNodeWithEGraph, egraph, startTransition]
   );
   const parsedEGraph: EGraph = useMemo(() => JSON.parse(egraph), [egraph]);
 
@@ -783,15 +801,30 @@ function LayoutFlow({
         selectedNode={selectedNode}
         elkJSON={beforeLayout}
         useInteractiveLayout={useInteractiveLayout}
-        setUseInteractiveLayout={useCallback((value) => startTransition(() => setUseInteractiveLayout(value)), [setUseInteractiveLayout])}
+        setUseInteractiveLayout={useCallback(
+          (value) => startTransition(() => setUseInteractiveLayout(value)),
+          [setUseInteractiveLayout, startTransition]
+        )}
         mergeEdges={mergeEdges}
-        setMergeEdges={useCallback((value) => startTransition(() => setMergeEdges(value)), [setMergeEdges])}
+        setMergeEdges={useCallback((value) => startTransition(() => setMergeEdges(value)), [setMergeEdges, startTransition])}
       />
     </SetSelectedNodeContext.Provider>
   );
 }
 
-export function Visualizer({ egraph, height = null, resize = false }: { egraph: string; height?: string | null; resize?: boolean }) {
+export function Visualizer({
+  egraph,
+  height = null,
+  resize = false,
+  startTransition,
+  isPending,
+}: {
+  egraph: string;
+  height?: string | null;
+  resize?: boolean;
+  startTransition: TransitionStartFunction;
+  isPending: boolean;
+}) {
   const [outerElem, setOuterElem] = useState<HTMLDivElement | null>(null);
   const [innerElem, setInnerElem] = useState<HTMLDivElement | null>(null);
 
@@ -803,7 +836,18 @@ export function Visualizer({ egraph, height = null, resize = false }: { egraph: 
     }
   }, [rootElem]);
   return (
-    <div className={`w-full ${resize ? "resize-y" : ""}`} style={{ height: height || "100%" }} ref={setRootElem}>
+    <div className={`w-full relative ${resize ? "resize-y" : ""}`} style={{ height: height || "100%" }} ref={setRootElem}>
+      {/* Set the portal container to be the parent so that it only fills that area instead of the full page */}
+      <Modal
+        size="xs"
+        classNames={{ modalOverlay: "absolute", modal: "w-fit" }}
+        isOpen={isPending}
+        UNSTABLE_portalContainer={rootElem || undefined}
+      >
+        <Dialog>
+          <DialogHeader className="pt-2 px-2">Loading layout...</DialogHeader>
+        </Dialog>
+      </Modal>
       {/* Hidden node to measure text size  */}
       <div className="invisible absolute">
         <ENode outerRef={setOuterElem} innerRef={setInnerElem} />
@@ -812,7 +856,13 @@ export function Visualizer({ egraph, height = null, resize = false }: { egraph: 
         <ErrorBoundary fallback={<p>⚠️Something went wrong</p>}>
           <Suspense fallback={<div>Laying out graph...</div>}>
             {outerElem && innerElem && aspectRatio && (
-              <LayoutFlow aspectRatio={aspectRatio} egraph={egraph} outerElem={outerElem} innerElem={innerElem} />
+              <LayoutFlow
+                aspectRatio={aspectRatio}
+                egraph={egraph}
+                outerElem={outerElem}
+                innerElem={innerElem}
+                startTransition={startTransition}
+              />
             )}
           </Suspense>
         </ErrorBoundary>
@@ -823,22 +873,42 @@ export function Visualizer({ egraph, height = null, resize = false }: { egraph: 
 
 // Put these both in one file, so its emitted as a single chunk and anywidget doesn't have to import another file
 
+function VisualizerWithTransition({
+  initialEgraph,
+  registerChangeEGraph,
+  resize,
+  height,
+}: {
+  initialEgraph: string;
+  registerChangeEGraph: (setEgraph: (egraph: string) => void) => void;
+  resize?: boolean;
+  height?: string;
+}) {
+  const [isPending, startTransition] = useTransition();
+  const [egraph, setEgraph] = useState(initialEgraph);
+  useEffect(() => {
+    registerChangeEGraph(setEgraph);
+  }, [registerChangeEGraph, setEgraph]);
+  return <Visualizer egraph={egraph} height={height} resize={resize} isPending={isPending} startTransition={startTransition} />;
+}
+
 /// Render anywidget model to the given element
 // Must be named `render` to work as an anywidget module
 // https://anywidget.dev/en/afm/#lifecycle-methods
 // eslint-disable-next-line react-refresh/only-export-components
 export function render({ model, el }: { el: HTMLElement; model: AnyModel }) {
   const root = createRoot(el);
-  function render() {
-    startTransition(() => {
-      root.render(<Visualizer egraph={model.get("egraph")} height="600px" resize />);
-    });
-  }
-  render();
-  model.on("change:egraph", render);
+  let callback: () => void;
+  const registerChangeEGraph = (setEgraph: (egraph: string) => void) => {
+    callback = () => setEgraph(model.get("egraph"));
+    model.on("change:egraph", callback);
+  };
+  root.render(
+    <VisualizerWithTransition initialEgraph={model.get("egraph")} registerChangeEGraph={registerChangeEGraph} height="600px" resize />
+  );
 
   return () => {
-    model.off("change:egraph", render);
+    model.off("change:egraph", callback);
     root.unmount();
   };
 }
@@ -849,11 +919,20 @@ export function render({ model, el }: { el: HTMLElement; model: AnyModel }) {
 // eslint-disable-next-line react-refresh/only-export-components
 export function mount(element: HTMLElement): { render: (egraph: string) => void; unmount: () => void } {
   const root = createRoot(element);
-
+  let setEgraph: null | ((egraph: string) => void) = null;
   function render(egraph: string) {
-    startTransition(() => {
-      root.render(<Visualizer egraph={egraph} />);
-    });
+    if (setEgraph) {
+      setEgraph(egraph);
+    } else {
+      root.render(
+        <VisualizerWithTransition
+          initialEgraph={egraph}
+          registerChangeEGraph={(setEgraph_) => {
+            setEgraph = setEgraph_;
+          }}
+        />
+      );
+    }
   }
 
   function unmount() {
