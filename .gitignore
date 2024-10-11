@@ -22,3 +22,9 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+.yarn
+
+.pnp.cjs
+.pnp.loader.mjs
+.yarnrc
+*.tsbuildinfo

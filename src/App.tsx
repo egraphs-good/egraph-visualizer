@@ -1,30 +1,29 @@
-import { use, useCallback, useState, useTransition } from "react";
-import "./App.css";
+import { useState } from "react";
 import Monaco from "./Monaco";
 import { Visualizer } from "./Visualizer";
-import DefaultCode from "/examples/manual/homepage.json?raw";
+import { defaultCode, defaultExample, fetchExample } from "./examples";
+import { useQuery } from "@tanstack/react-query";
 
 function App() {
-  const [isPending, startTransition] = useTransition();
-  const [egraphPromise, setEGraphPromise] = useState<Promise<string> | string>(DefaultCode);
-  const egraph = typeof egraphPromise === "string" ? egraphPromise : use(egraphPromise);
-  // const setCode = useCallback(
-  //   (code: Promise<string>) => {
-  //     // startTransition(() => {
-  //     setEGraphPromise(code);
-  //     // });
-  //   },
-  //   [startTransition, setEGraphPromise]
-  // );
+  const [example, setExample] = useState<string>(defaultExample);
+  const exampleQuery = useQuery({
+    queryKey: ["example", example],
+    queryFn: () => fetchExample(example),
+    staleTime: Infinity,
+    retry: false,
+    retryOnMount: false,
+  });
+  const [modifiedCode, setModifiedCode] = useState<string | null>(null);
+  const currentCode = modifiedCode ?? exampleQuery.data;
   return (
     <>
       <div className="flex min-h-screen">
         <div className="flex w-1/3 resize-x overflow-auto">
-          <Monaco code={egraph} setCode={setEGraphPromise} startTransition={startTransition} />
+          <Monaco setModifiedCode={setModifiedCode} exampleQuery={exampleQuery} example={example} setExample={setExample} />
         </div>
 
         <div className="flex w-2/3">
-          <Visualizer egraph={egraph} startTransition={startTransition} isPending={isPending} />
+          <Visualizer egraph={currentCode || defaultCode} />
         </div>
       </div>
       <footer className="p-2 fixed bottom-0 min-w-full text-xs text-gray-500 text-right dark:text-gray-400">

@@ -1,68 +1,84 @@
-/// <reference types="react/canary" />
-
-import { startTransition, TransitionStartFunction, useCallback, useState } from "react";
+import { useCallback, useState } from "react";
 import MonacoEditor from "react-monaco-editor";
-import { useDebouncedCallback } from "use-debounce";
-
-const examples = {
-  ...import.meta.glob("/examples/manual/*.json", { query: "?raw" }),
-  ...import.meta.glob("/examples/egraph-serialize/tests/*.json", { query: "?raw" }),
-  ...import.meta.glob("/examples/extraction-gym/data/*/*.json", { query: "?raw" }),
-};
-
-const defaultExample = "/examples/manual/homepage.json";
+import { exampleNames } from "./examples";
+import { UseQueryResult } from "@tanstack/react-query";
+import { Select, SelectListItem, SelectListBox, SelectButton, SelectPopover } from "./react-aria-components-tailwind-starter/src/select";
+import { Key } from "react-aria-components";
+import { Button } from "./react-aria-components-tailwind-starter/src/button";
+import { Loading } from "./Loading";
 
 function Monaco({
-  code,
-  setCode,
-  startTransition,
+  exampleQuery,
+  setModifiedCode,
+  example,
+  setExample,
 }: {
-  code: string;
-  setCode: (code: Promise<string> | string) => void;
-  startTransition: TransitionStartFunction;
+  exampleQuery: UseQueryResult<string, Error>;
+  setModifiedCode: (code: string | null) => void;
+  example: string;
+  setExample: (example: string) => void;
 }) {
-  const [selectedPreset, setSelectedPreset] = useState(defaultExample);
+  const [code, setCode] = useState<string | null>(null);
   const handlePresetChange = useCallback(
-    (event: React.ChangeEvent<HTMLSelectElement>) => {
-      const preset = event.target.value;
-      setSelectedPreset(preset);
-      setCode(examples[preset]().then((loaded) => (loaded as { default: string }).default));
+    (preset: Key) => {
+      setExample(preset as string);
+      setCode(null);
+      setModifiedCode(null);
     },
-    [setCode, setSelectedPreset]
+    [setExample, setModifiedCode]
   );
 
-  const setCodeString = useDebouncedCallback((code: string) => {
-    startTransition(() => setCode(code));
-    // setCode(code);
-  }, 500);
+  const currentValue = code || exampleQuery.data;
+
+  const handleUpdate = useCallback(() => {
+    setModifiedCode(currentValue || null);
+  }, [currentValue, setModifiedCode]);
 
   return (
     <div className="flex flex-col h-full w-full">
-      <select value={selectedPreset} onChange={handlePresetChange} className="m-1 p-2 border border-gray-300 rounded">
-        <option value="" disabled>
-          Select a preset
-        </option>
-        {Object.keys(examples).map((preset) => (
-          <option key={preset} value={preset}>
-            {preset}
-          </option>
-        ))}
-      </select>
-      <MonacoEditor
-        language="json"
-        theme="vs-dark"
-        value={code}
-        onChange={setCodeString}
-        width="100%"
-        height="100%"
-        defaultValue=""
-        options={{}}
-        overrideServices={{}}
-        editorWillMount={() => {}}
-        editorDidMount={() => {}}
-        editorWillUnmount={() => {}}
-        className={null}
-      />
+      <div className="flex p-2">
+        <Select
+          placeholder="Select a preset"
+          selectedKey={example}
+          onSelectionChange={handlePresetChange}
+          aria-label="Select a preset file to load"
+        >
+          <SelectButton />
+
+          <SelectPopover>
+            <SelectListBox>
+              {exampleNames.map((preset) => (
+                <SelectListItem key={preset} id={preset}>
+                  {preset}
+                </SelectListItem>
+              ))}
+            </SelectListBox>
+          </SelectPopover>
+        </Select>
+        <Button className="ml-2" onPress={handleUpdate} variant="outline">
+          Update
+        </Button>
+      </div>
+      {exampleQuery.isFetching && <Loading />}
+      {exampleQuery.status == "error" ? (
+        <div className="p-4">Error loading example: {exampleQuery.error.message}</div>
+      ) : (
+        <MonacoEditor
+          language="json"
+          theme="vs-dark"
+          value={currentValue}
+          onChange={setCode}
+          width="100%"
+          height="100%"
+          defaultValue=""
+          options={{}}
+          overrideServices={{}}
+          editorWillMount={() => {}}
+          editorDidMount={() => {}}
+          editorWillUnmount={() => {}}
+          className={null}
+        />
+      )}
     </div>
   );
 }
