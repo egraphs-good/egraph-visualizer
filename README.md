@@ -66,6 +66,8 @@ It is also published as an NPM package, which can be imported and used in the br
 There is also a demo site published on Github Pages, which allows you to upload and edit a serialized e-graph and see
 the visualization.
 
+_If other ways of packaging would be helpful, please open an issue._
+
 ## Development
 
 First install [Yarn](https://yarnpkg.com/getting-started/install), then run:
