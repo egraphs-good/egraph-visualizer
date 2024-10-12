@@ -508,7 +508,11 @@ export function render({ model, el }: { el: HTMLElement; model: AnyModel }) {
 export function mount(element: HTMLElement): { render: (egraphs: string[]) => void; unmount: () => void } {
   const root = createRoot(element);
   function render(egraphs: string[]) {
-    root.render(<Visualizer egraphs={egraphs} />);
+    root.render(
+      <QueryClientProvider client={queryClient}>
+        <Visualizer egraphs={egraphs} />
+      </QueryClientProvider>
+    );
   }
 
   function unmount() {
