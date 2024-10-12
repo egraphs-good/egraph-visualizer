@@ -49,6 +49,7 @@ import { keepPreviousData, QueryClientProvider, useQuery } from "@tanstack/react
 import { FlowClass, FlowEdge, FlowNode, layoutGraph, PreviousLayout, SelectedNode } from "./layout";
 import { queryClient } from "./queryClient";
 import { Loading } from "./Loading";
+import { Slider, SliderOutput, SliderTack } from "./react-aria-components-tailwind-starter/src/slider";
 
 export function EClassNode({ data, selected }: NodeProps<FlowClass>) {
   return (
@@ -392,114 +393,122 @@ function LayoutFlow({
     <>
       {layoutQuery.isFetching ? <Loading /> : <></>}
       <SetSelectedNodeContext.Provider value={setSelectedNode}>
-        <Rendering
-          nodes={nodes}
-          edges={edges}
-          nodeToEdges={nodeToEdges}
-          edgeToNodes={edgeToNodes}
-          selectedNode={selectedNode}
-          elkJSON={elkJSON}
-          useInteractiveLayout={useInteractiveLayout}
-          setUseInteractiveLayout={setUseInteractiveLayout}
-          mergeEdges={mergeEdges}
-          setMergeEdges={setMergeEdges}
-        />
+        <ReactFlowProvider>
+          <Rendering
+            nodes={nodes}
+            edges={edges}
+            nodeToEdges={nodeToEdges}
+            edgeToNodes={edgeToNodes}
+            selectedNode={selectedNode}
+            elkJSON={elkJSON}
+            useInteractiveLayout={useInteractiveLayout}
+            setUseInteractiveLayout={setUseInteractiveLayout}
+            mergeEdges={mergeEdges}
+            setMergeEdges={setMergeEdges}
+          />
+        </ReactFlowProvider>
       </SetSelectedNodeContext.Provider>
     </>
   );
 }
 
-export function Visualizer({ egraph, height = null, resize = false }: { egraph: string; height?: string | null; resize?: boolean }) {
-  const [outerElem, setOuterElem] = useState<HTMLDivElement | null>(null);
-  const [innerElem, setInnerElem] = useState<HTMLDivElement | null>(null);
+function SelectSider({ length, onSelect, selected }: { length: number; onSelect: (index: number) => void; selected: number }) {
+  return (
+    <div className={`absolute top-0 left-0 p-4 z-50 backdrop-blur-sm ${length > 1 ? "" : "opacity-0"}`}>
+      <Slider
+        minValue={0}
+        maxValue={length - 1}
+        onChange={onSelect}
+        value={selected}
+        aria-label="Select which egraph to display from the history"
+      >
+        <div className="flex flex-1 items-end">
+          <div className="flex flex-1 flex-col">
+            <SliderOutput className="self-center">
+              {({ state }) => {
+                return (
+                  <span className="text-sm">
+                    {state.getThumbValueLabel(0)} / {length - 1}
+                  </span>
+                );
+              }}
+            </SliderOutput>
+            <div className="flex flex-1 items-center gap-3">
+              <SliderTack thumbLabels={["volume"]} />
+            </div>
+          </div>
+        </div>
+      </Slider>
+    </div>
+  );
+}
 
+export function Visualizer({ egraphs, height = null, resize = false }: { egraphs: string[]; height?: string | null; resize?: boolean }) {
   const [rootElem, setRootElem] = useState<HTMLDivElement | null>(null);
 
-  const aspectRatio = useMemo(() => {
-    if (rootElem) {
-      return rootElem.clientWidth / rootElem.clientHeight;
-    }
-  }, [rootElem]);
+  const [outerElem, setOuterElem] = useState<HTMLDivElement | null>(null);
+  const [innerElem, setInnerElem] = useState<HTMLDivElement | null>(null);
+  const aspectRatio = rootElem ? rootElem.clientWidth / rootElem.clientHeight : null;
+
+  // If we are at null, then use the last item in the list
+  // if the last selection was for a list of egraphs that no longer exists, then use the last item in the list
+  const [selected, setSelected] = useState<null | { egraphs: string[]; index: number }>(null);
+  const actualSelected = selected && selected.egraphs === egraphs ? selected.index : egraphs.length - 1;
+  const onSelect = useCallback(
+    (index: number) => {
+      setSelected({ egraphs, index });
+    },
+    [setSelected, egraphs]
+  );
+
   return (
     <div className={`w-full relative ${resize ? "resize-y" : ""}`} style={{ height: height || "100%" }} ref={setRootElem}>
       {/* Hidden node to measure text size  */}
       <div className="invisible absolute">
         <ENode outerRef={setOuterElem} innerRef={setInnerElem} />
       </div>
-      <ReactFlowProvider>
-        {outerElem && innerElem && aspectRatio && (
-          <LayoutFlow aspectRatio={aspectRatio} egraph={egraph} outerElem={outerElem} innerElem={innerElem} />
-        )}
-      </ReactFlowProvider>
+      <SelectSider length={egraphs.length} onSelect={onSelect} selected={actualSelected} />
+      {outerElem && innerElem && aspectRatio && (
+        <LayoutFlow aspectRatio={aspectRatio} egraph={egraphs[actualSelected]} outerElem={outerElem} innerElem={innerElem} />
+      )}
     </div>
   );
 }
 
 // Put these both in one file, so its emitted as a single chunk and anywidget doesn't have to import another file
 
-function VisualizerWithTransition({
-  initialEgraph,
-  registerChangeEGraph,
-  resize,
-  height,
-}: {
-  initialEgraph: string;
-  registerChangeEGraph: (setEgraph: (egraph: string) => void) => void;
-  resize?: boolean;
-  height?: string;
-}) {
-  const [egraph, setEgraph] = useState(initialEgraph);
-  useEffect(() => {
-    registerChangeEGraph(setEgraph);
-  }, [registerChangeEGraph, setEgraph]);
-  return (
-    <QueryClientProvider client={queryClient}>
-      <Visualizer egraph={egraph} height={height} resize={resize} />
-    </QueryClientProvider>
-  );
-}
-
 /// Render anywidget model to the given element
 // Must be named `render` to work as an anywidget module
 // https://anywidget.dev/en/afm/#lifecycle-methods
 // eslint-disable-next-line react-refresh/only-export-components
 export function render({ model, el }: { el: HTMLElement; model: AnyModel }) {
+  // only render once with data, dont support updating widget yet
   const root = createRoot(el);
-  let callback: () => void;
-  const registerChangeEGraph = (setEgraph: (egraph: string) => void) => {
-    callback = () => setEgraph(model.get("egraph"));
-    model.on("change:egraph", callback);
-  };
+  // let callback: () => void;
+  // const registerChangeEGraph = (setEgraph: (egraph: string) => void) => {
+  // callback = () => setEgraph(model.get("egraph"));
+  // model.on("change:egraph", callback);
+  // };
   root.render(
-    <VisualizerWithTransition initialEgraph={model.get("egraph")} registerChangeEGraph={registerChangeEGraph} height="600px" resize />
+    <QueryClientProvider client={queryClient}>
+      <Visualizer egraphs={model.get("egraphs")} height="600px" resize />
+    </QueryClientProvider>
   );
 
   return () => {
-    model.off("change:egraph", callback);
+    // model.off("change:egraph", callback);
     root.unmount();
   };
 }
 
 /// Mount the visualizer to the given element
-/// Call `render` to render a new egraph
+/// Call `render` to render a new list of egraphs
 /// Call `unmount` to unmount the visualizer
 // eslint-disable-next-line react-refresh/only-export-components
-export function mount(element: HTMLElement): { render: (egraph: string) => void; unmount: () => void } {
+export function mount(element: HTMLElement): { render: (egraphs: string[]) => void; unmount: () => void } {
   const root = createRoot(element);
-  let setEgraph: null | ((egraph: string) => void) = null;
-  function render(egraph: string) {
-    if (setEgraph) {
-      setEgraph(egraph);
-    } else {
-      root.render(
-        <VisualizerWithTransition
-          initialEgraph={egraph}
-          registerChangeEGraph={(setEgraph_) => {
-            setEgraph = setEgraph_;
-          }}
-        />
-      );
-    }
+  function render(egraphs: string[]) {
+    root.render(<Visualizer egraphs={egraphs} />);
   }
 
   function unmount() {

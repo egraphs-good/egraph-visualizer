@@ -9,30 +9,33 @@ import { Loading } from "./Loading";
 
 function Monaco({
   exampleQuery,
-  setModifiedCode,
+  addModification,
+  initialCode,
   example,
   setExample,
 }: {
   exampleQuery: UseQueryResult<string, Error>;
-  setModifiedCode: (code: string | null) => void;
+  initialCode: string;
+  addModification: (code: string) => void;
   example: string;
+
   setExample: (example: string) => void;
 }) {
+  // locally modified code that is only saved when the user clicks "Update"
   const [code, setCode] = useState<string | null>(null);
   const handlePresetChange = useCallback(
     (preset: Key) => {
       setExample(preset as string);
       setCode(null);
-      setModifiedCode(null);
     },
-    [setExample, setModifiedCode]
+    [setExample, setCode]
   );
 
-  const currentValue = code || exampleQuery.data;
+  const currentValue = code || initialCode;
 
   const handleUpdate = useCallback(() => {
-    setModifiedCode(currentValue || null);
-  }, [currentValue, setModifiedCode]);
+    addModification(currentValue);
+  }, [currentValue, addModification]);
 
   return (
     <div className="flex flex-col h-full w-full">
