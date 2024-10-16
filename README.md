@@ -58,7 +58,7 @@ It is also published as an NPM package, which can be imported and used in the br
     },
   };
   const mounted = mount(document.getElementById("egraph-visualizer"));
-  mounted.render(JSON.stringify(egraph));
+  mounted.render([JSON.stringify(egraph)]);
   // later can call mounted.unmount() to remove the visualizer
 </script>
 ```
