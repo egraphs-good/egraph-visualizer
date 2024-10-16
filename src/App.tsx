@@ -52,8 +52,8 @@ function App() {
         </div>
       </div>
       <footer className="p-2 fixed bottom-0 min-w-full text-xs text-gray-500 text-right dark:text-gray-400">
-        <a href="https://github.com/saulshanabrook/egraph-visualizer" target="_blank" className="hover:underline">
-          github.com/saulshanabrook/egraph-visualizer
+        <a href="https://github.com/egraphs-good/egraph-visualizer" target="_blank" className="hover:underline">
+          github.com/egraphs-good/egraph-visualizer
         </a>
       </footer>
     </>
