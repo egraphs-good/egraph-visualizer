@@ -462,7 +462,7 @@ export function Visualizer({ egraphs, height = null, resize = false }: { egraphs
   );
 
   return (
-    <div className={`w-full relative ${resize ? "resize-y" : ""}`} style={{ height: height || "100%" }} ref={setRootElem}>
+    <div className={`twp w-full relative ${resize ? "resize-y" : ""}`} style={{ height: height || "100%" }} ref={setRootElem}>
       {/* Hidden node to measure text size  */}
       <div className="invisible absolute">
         <ENode outerRef={setOuterElem} innerRef={setInnerElem} />

@@ -3411,6 +3411,7 @@ __metadata:
     tailwindcss: "npm:3.4.13"
     tailwindcss-animate: "npm:1.0.7"
     tailwindcss-react-aria-components: "npm:1.1.6"
+    tailwindcss-scoped-preflight: "npm:^3.4.5"
     typescript: "npm:^5.6.3"
     typescript-eslint: "npm:^8.8.1"
     vega-scale: "npm:7.4.1"
@@ -5333,6 +5334,16 @@ __metadata:
   peerDependencies:
     tailwindcss: "*"
   checksum: 10c0/4d4a01358f616b1647c77a7808d678a37436165c4cb1c6cef0d280e3f45451a3b8b3b5ebf812bcfa469d7fcb961bdcf3e579b8929269b7acc8f120c8b224e96f
+  languageName: node
+  linkType: hard
+
+"tailwindcss-scoped-preflight@npm:^3.4.5":
+  version: 3.4.5
+  resolution: "tailwindcss-scoped-preflight@npm:3.4.5"
+  peerDependencies:
+    postcss: ^8
+    tailwindcss: ^3
+  checksum: 10c0/d61f85deba587affb70eb430ca2722ce798fc2b62f9230a7d2d2dd35765e7d83d99d8e46e0fc6ff197ad2c47bd66bc9b5b77d200b3d885644a14996ef309eaef
   languageName: node
   linkType: hard
 

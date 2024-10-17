@@ -1,5 +1,9 @@
+import { scopedPreflightStyles, isolateInsideOfContainer } from 'tailwindcss-scoped-preflight';
+
 // https://github.com/zaichaopan/react-aria-components-tailwind-starter/blob/c15f630866480e00d7a39258db0f61b39704e00e/tailwind.config.js
+
 const defaultTheme = require('tailwindcss/defaultTheme');
+
 /** @type {import('tailwindcss').Config} */
 export default {
   content: [
@@ -25,6 +29,9 @@ export default {
     require('tailwindcss-react-aria-components'),
     require('tailwindcss-animate'),
     require('@tailwindcss/container-queries'),
+    scopedPreflightStyles({
+      isolationStrategy: isolateInsideOfContainer('.twp', {}),
+    }),
   ],
   important: true,
 }
