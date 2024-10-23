@@ -45,6 +45,7 @@ const interactiveOptions = {
   "elk.layered.layering.strategy": "INTERACTIVE",
   "elk.layered.nodePlacement.strategy": "INTERACTIVE",
   // Had to disable or leads to weird edges
+  // "elk.layered.crossingMinimization.semiInteractive": "true",
   // "elk.layered.crossingMinimization.strategy": "INTERACTIVE",
 };
 
@@ -364,18 +365,36 @@ function toELKNode(
     // and preserve the positions of the nodes that were already layed out
     elkRoot.layoutOptions = { ...elkRoot.layoutOptions, ...interactiveOptions };
     for (const elkClass of elkRoot.children) {
-      const previousClass = layout.children.find(({ data }) => data.id === elkClass.id);
+      const previousClass = layout.children.find(({ id }) => id === elkClass.id);
       if (!previousClass) {
         continue;
       }
-      Object.assign(elkClass.layoutOptions!, interactiveOptions);
+      elkClass.layoutOptions = { ...elkClass.layoutOptions, ...interactiveOptions };
       elkClass.x = previousClass.x;
       elkClass.y = previousClass.y;
+      for (const elkCLassPort of elkClass.ports || []) {
+        const previousPort = (previousClass.ports || []).find(({ id }) => id === elkCLassPort.id);
+        if (!previousPort) {
+          continue;
+        }
+        elkCLassPort.x = previousPort.x;
+        elkCLassPort.y = previousPort.y;
+      }
+
       for (const elkNode of elkClass.children) {
-        const previousNode = previousClass.children.find(({ data }) => data.id === elkNode.id);
+        const previousNode = previousClass.children.find(({ id }) => id === elkNode.id);
         if (!previousNode) {
           continue;
         }
+        for (const elkNodePort of elkNode.ports || []) {
+          const previousPort = (previousNode.ports || []).find(({ id }) => id === elkNodePort.id);
+          if (!previousPort) {
+            continue;
+          }
+          elkNodePort.x = previousPort.x;
+          elkNodePort.y = previousPort.y;
+        }
+
         elkNode.x = previousNode.x;
         elkNode.y = previousNode.y;
       }
