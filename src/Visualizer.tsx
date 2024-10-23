@@ -333,28 +333,31 @@ function LayoutFlow({
   outerElem,
   innerElem,
   aspectRatio,
+  firstEgraph,
 }: {
   egraph: string;
   outerElem: HTMLDivElement;
   innerElem: HTMLDivElement;
   aspectRatio: number;
+  firstEgraph: string;
 }) {
   const [useInteractiveLayout, setUseInteractiveLayout] = useState(false);
   const [mergeEdges, setMergeEdges] = useState(false);
   const previousLayoutRef = useRef<PreviousLayout | null>(null);
-  // e-class ID we have currently selected, store egraph string as well so we know if this selection is outdated
-  const [selectedNodeWithEGraph, setSelectedNodeWithEGraph] = useState<(SelectedNode & { egraph: string }) | null>(null);
+  // e-class ID we have currently selected, store the first egraph string as well so we know if this selection is outdated,
+  // if our whole list of egraphs changes, but keep the selection if we have simply added a new egraph on
+  const [selectedNodeWithEGraph, setSelectedNodeWithEGraph] = useState<(SelectedNode & { firstEgraph: string }) | null>(null);
   const selectedNode = useMemo(() => {
-    if (selectedNodeWithEGraph && selectedNodeWithEGraph.egraph === egraph) {
+    if (selectedNodeWithEGraph && selectedNodeWithEGraph.firstEgraph === firstEgraph) {
       return selectedNodeWithEGraph;
     }
     return null;
-  }, [selectedNodeWithEGraph, egraph]);
+  }, [selectedNodeWithEGraph, firstEgraph]);
   const setSelectedNode = useCallback(
     (node: { type: "class" | "node"; id: string } | null) => {
-      setSelectedNodeWithEGraph(node ? { ...node, egraph } : null);
+      setSelectedNodeWithEGraph(node ? { ...node, firstEgraph } : null);
     },
-    [setSelectedNodeWithEGraph, egraph]
+    [setSelectedNodeWithEGraph, firstEgraph]
   );
 
   const getNodeSize = useCallback(
@@ -469,7 +472,13 @@ export function Visualizer({ egraphs, height = null, resize = false }: { egraphs
       </div>
       <SelectSider length={egraphs.length} onSelect={onSelect} selected={actualSelected} />
       {outerElem && innerElem && aspectRatio && (
-        <LayoutFlow aspectRatio={aspectRatio} egraph={egraphs[actualSelected]} outerElem={outerElem} innerElem={innerElem} />
+        <LayoutFlow
+          aspectRatio={aspectRatio}
+          firstEgraph={egraphs[0]}
+          egraph={egraphs[actualSelected]}
+          outerElem={outerElem}
+          innerElem={innerElem}
+        />
       )}
     </div>
   );
