@@ -73,15 +73,18 @@ export function ENode(
     }
   >
 ) {
+  const subsumed = props?.data?.subsumed || false;
   return (
     <div
-      className={`p-1 rounded-md outline bg-white outline-black h-full w-full ${props?.selected ? "outline-2" : "outline-1"}`}
+      className={`p-1 rounded-md outline bg-white ${subsumed ? "outline-gray-300" : "outline-black"} h-full w-full ${
+        props?.selected ? "outline-2" : "outline-1"
+      }`}
       ref={props?.outerRef}
     >
       {props?.outerRef ? <></> : <MyNodeToolbar type="node" id={props!.data!.id} />}
 
       <div
-        className="font-mono text-xs truncate max-w-96 min-w-4 text-center"
+        className={`font-mono text-xs truncate max-w-96 min-w-4 text-center ${subsumed ? "text-gray-300" : ""}`}
         title={`${props?.data?.id}\n${props?.data?.label}`}
         ref={props?.innerRef}
       >

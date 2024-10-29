@@ -60,6 +60,7 @@ type EGraphNode = {
   children?: EGraphNodeID[];
   eclass: EGraphClassID;
   cost: number;
+  subsumed?: boolean;
 };
 
 type EGraphClassData = {
@@ -88,6 +89,7 @@ export type FlowNode = Node<
   {
     label: string;
     id: string;
+    subsumed?: boolean;
     // selected?: boolean
   },
   "node"
@@ -290,7 +292,7 @@ function toELKNode(
       const elkNodeID = `node-${nodeID}`;
       const elkNode: MyELKNode["children"][0]["children"][0] = {
         id: elkNodeID,
-        data: { label: node.op, id: nodeID },
+        data: { label: node.op, id: nodeID, ...(node.subsumed ? { subsumed: true } : {}) },
         width: size.width,
         height: size.height,
         ports: [],
