@@ -77,6 +77,17 @@ yarn install
 yarn run [build|start|lint]
 ```
 
+## Releasing
+
+Releasing is totally automated. Just update the version in `package.json` and push a new tag to the repository.
+
+You can purge the cache for jsDelivr so that egglog will pull in the new version, by entering these two URLs [here](https://www.jsdelivr.com/tools/purge).
+
+```
+https://cdn.jsdelivr.net/npm/egraph-visualizer@2/dist/style.css
+https://cdn.jsdelivr.net/npm/egraph-visualizer@2/+esm
+```
+
 ## Contributing
 
 This package is open to external contributors. Feel free to open a pull request or an issue for bugs or desired features.
