@@ -4,6 +4,7 @@ import ELK, { ElkExtendedEdge, ElkNode } from "elkjs/lib/elk-api";
 import { Node, Edge } from "@xyflow/react";
 // Make worker inline because if its external cannot be loaded from esm.sh due to CORS
 import ELKWorker from "elkjs/lib/elk-worker?worker&inline";
+import { EGraph, EGraphClassID, EGraphNodeID, EGraphNode, inlineProperties } from "./serializedEGraph";
 
 // Elk has a *huge* amount of options to configure. To see everything you can
 // tweak check out:
@@ -53,25 +54,6 @@ const nodeLayoutOptions = {
   portConstraints: "FIXED_ORDER",
 };
 
-type EGraphNodeID = string;
-type EGraphClassID = string;
-type EGraphNode = {
-  op: string;
-  children?: EGraphNodeID[];
-  eclass: EGraphClassID;
-  cost: number;
-  subsumed?: boolean;
-};
-
-type EGraphClassData = {
-  type?: string;
-};
-type EGraph = {
-  nodes: { [id: EGraphNodeID]: EGraphNode };
-  root_eclasses?: EGraphClassID[];
-  class_data?: { [id: EGraphClassID]: EGraphClassData };
-};
-
 type Color = string;
 // Use these color schemes for the nodes
 // https://vega.github.io/vega/docs/schemes/#categorical
@@ -90,6 +72,7 @@ export type FlowNode = Node<
     label: string;
     id: string;
     subsumed?: boolean;
+    hidden: boolean;
     // selected?: boolean
   },
   "node"
@@ -144,7 +127,11 @@ export async function layoutGraph(
   selectedNode: SelectedNode | null,
   previousLayout: PreviousLayout | null,
   mergeEdges: boolean,
-  signal: AbortSignal
+  signal: AbortSignal,
+  // mapping of node id to whether the node is hidden or not
+  // We will also by default hide some nodes to improve rendering to start.
+  hiddenOverrides: Record<EGraphNodeID, boolean>,
+  initialMaxNodes: number
 ): Promise<{
   nodes: (FlowNode | FlowClass)[];
   edges: FlowEdge[];
@@ -152,9 +139,22 @@ export async function layoutGraph(
   nodeToEdges: Map<string, string[]>;
   elkJSON: string;
   layout: PreviousLayout;
+  hiddenNodeStats: { visible: number; total: number };
 }> {
-  const parsedEGraph = JSON.parse(egraph);
-  const { elkNode, colors } = toELKNode(parsedEGraph, getNodeSize, selectedNode, aspectRatio, previousLayout, mergeEdges);
+  const parsedEGraph: EGraph = JSON.parse(egraph);
+  // inlineProperties(parsedEGraph);
+  // printEGraphStats(parsedEGraph);
+  console.time("toELKNode");
+  const { elkNode, colors, hiddenNodeStats } = toELKNode(
+    parsedEGraph,
+    getNodeSize,
+    selectedNode,
+    aspectRatio,
+    previousLayout,
+    mergeEdges,
+    hiddenOverrides,
+    initialMaxNodes
+  );
   const elkJSON = JSON.stringify(elkNode, null, 2);
   const layout = (await layoutWithCancel(elkNode, signal)) as MyELKNodeLayedOut;
   const edges = toFlowEdges(layout);
@@ -172,7 +172,154 @@ export async function layoutGraph(
     edges,
     edgeToNodes,
     nodeToEdges,
+    hiddenNodeStats,
   };
+}
+
+function computeHiddenNodes(
+  egraph: EGraph,
+  hiddenOverrides: Record<EGraphNodeID, boolean>,
+  classToNodes: Map<EGraphClassID, [EGraphNodeID, EGraphNode][]>,
+  nodeToClass: Map<EGraphNodeID, EGraphClassID>,
+  initialMaxNodes: number
+): Set<EGraphNodeID> {
+  // Since we can only expand children,
+  // we have to start with showing all parents of the graph and then hide their nodes until we reach the limit
+  // Ideally we we would like to show all parents, then show the descdents breadth first of the parent with the most
+  // descendants until we reach the limit
+  // We also have to account for cycles in the graph
+  // 1. Create condensation graph
+  // 2. traverse condensation graph and find SCCs without parents
+  // 3. Choose a node from each of those SCCs
+  // 4. BFS from those nodes until we reach the limit, then track rest of node as hidden
+  // 5. Update hidden nodes with overrides
+
+  // Build adjacency list representation of the graph
+  const adjacencyList = new Map<EGraphNodeID, EGraphNodeID[]>();
+  for (const [nodeID, node] of Object.entries(egraph.nodes)) {
+    // all children of nodes includes all direct children and all nodes in those e-classes
+    const allChildren = (node.children || []).flatMap((child) => classToNodes.get(nodeToClass.get(child)!)!.map(([id]) => id));
+    adjacencyList.set(nodeID, allChildren);
+  }
+
+  // Compute SCCs using Tarjan's algorithm
+  const { sccs, nodeToSCC } = computeSCCs(adjacencyList);
+
+  // compute all the parent SCCs per SCC
+  const sccToParents = new Array(sccs.length).fill(0).map(() => new Set<number>());
+  // TODO: Verify that its topological?
+  for (const [scc, nodes] of sccs.entries()) {
+    for (const child of nodes.flatMap((node) => adjacencyList.get(node)!)) {
+      const childScc = nodeToSCC.get(child)!;
+      sccToParents[childScc].add(scc);
+    }
+  }
+  // for (const [nodeID, childrenNodes] of adjacencyList.entries()) {
+  //   const scc = nodeToSCC.get(nodeID)!;
+
+  // }
+
+  // Compute the height of every scc
+  const sccHieght = new Array(sccs.length).fill(1);
+  // Iterate in order, since sccs is in reverse topoligical order
+  for (const [scc, parents] of sccToParents.entries()) {
+    const parentHeight = sccHieght[scc] + 1;
+    for (const parent of parents) {
+      sccHieght[parent] = Math.max(sccHieght[parent], parentHeight);
+    }
+  }
+  const tallestScc = sccHieght.indexOf(Math.max(...sccHieght));
+
+  // Visit starting at the tallest SCC
+
+  // Start with the node that has the highest height.
+  const toVisitNodes = [sccs[tallestScc][0]];
+  // const toVisitNodes = [...sccs.entries()].filter(([sccID]) => !nonRootSCCs.has(sccID)).map(([, [firstNode]]) => firstNode);
+  // also include all other nodes that are in the same e-class as these root nodes first
+  // for (const nodeID of [...toVisitNodes]) {
+  //   const classID = nodeToClass.get(nodeID)!;
+  //   const classNodes = classToNodes.get(classID)!;
+  //   for (const [id] of classNodes) {
+  //     if (id !== nodeID) {
+  //       toVisitNodes.push(id);
+  //     }
+  //   }
+  // }
+  const visitedNodes = new Set<EGraphNodeID>();
+  const hiddenNodes = new Set<EGraphNodeID>(adjacencyList.keys());
+  // perform BFS and when we have visited at least initialMaxNodes, mark the rest as hidden
+  while (toVisitNodes.length > 0) {
+    const nodeID = toVisitNodes.shift()!;
+    if (visitedNodes.has(nodeID)) continue;
+    visitedNodes.add(nodeID);
+
+    if (visitedNodes.size < initialMaxNodes) {
+      hiddenNodes.delete(nodeID);
+    }
+    const neighbors = adjacencyList.get(nodeID)!;
+    toVisitNodes.push(...neighbors);
+  }
+
+  // Apply hidden overrides
+  for (const [nodeID, hidden] of Object.entries(hiddenOverrides)) {
+    if (hidden) {
+      hiddenNodes.add(nodeID);
+    } else {
+      hiddenNodes.delete(nodeID);
+    }
+  }
+  return hiddenNodes;
+}
+
+// Helper function to compute SCCs using Tarjan's algorithm
+function computeSCCs(adjacencyList: Map<EGraphNodeID, EGraphNodeID[]>): {
+  sccs: EGraphNodeID[][];
+  nodeToSCC: Map<EGraphNodeID, number>;
+} {
+  let index = 0;
+  const indices = new Map<EGraphNodeID, number>();
+  const lowlinks = new Map<EGraphNodeID, number>();
+  const stack: EGraphNodeID[] = [];
+  const onStack = new Set<EGraphNodeID>();
+  const sccs: EGraphNodeID[][] = [];
+  const nodeToSCC = new Map<EGraphNodeID, number>();
+
+  const strongConnect = (nodeID: EGraphNodeID) => {
+    indices.set(nodeID, index);
+    lowlinks.set(nodeID, index);
+    index++;
+    stack.push(nodeID);
+    onStack.add(nodeID);
+
+    for (const neighbor of adjacencyList.get(nodeID) || []) {
+      if (!indices.has(neighbor)) {
+        strongConnect(neighbor);
+        lowlinks.set(nodeID, Math.min(lowlinks.get(nodeID)!, lowlinks.get(neighbor)!));
+      } else if (onStack.has(neighbor)) {
+        lowlinks.set(nodeID, Math.min(lowlinks.get(nodeID)!, indices.get(neighbor)!));
+      }
+    }
+
+    if (lowlinks.get(nodeID) === indices.get(nodeID)) {
+      const scc: EGraphNodeID[] = [];
+      let w: EGraphNodeID;
+      do {
+        w = stack.pop()!;
+        onStack.delete(w);
+        scc.push(w);
+        nodeToSCC.set(w, sccs.length);
+      } while (w !== nodeID);
+      sccs.push(scc);
+    }
+  };
+
+  for (const nodeID of adjacencyList.keys()) {
+    if (!indices.has(nodeID)) {
+      strongConnect(nodeID);
+    }
+  }
+
+  return { sccs, nodeToSCC };
 }
 
 // We wil convert this to a graph where the id of the nodes are class-{class_id} and node-{node_id}
@@ -183,8 +330,10 @@ function toELKNode(
   selectedNode: SelectedNode | null,
   aspectRatio: number,
   previousLayout: PreviousLayout | null,
-  mergeEdges: boolean
-): { elkNode: MyELKNode; colors: Colors } {
+  mergeEdges: boolean,
+  hiddenOverrides: Record<EGraphNodeID, boolean>,
+  initialMaxNodes: number
+): { elkNode: MyELKNode; colors: Colors; hiddenNodeStats: { visible: number; total: number } } {
   const nodeToClass = new Map<EGraphNodeID, EGraphClassID>();
   const classToNodes = new Map<EGraphClassID, [EGraphNodeID, EGraphNode][]>();
   for (const [id, node] of Object.entries(egraph.nodes)) {
@@ -194,8 +343,11 @@ function toELKNode(
     }
     classToNodes.get(node.eclass)!.push([id, node]);
   }
+
+  let hiddenNodes;
   /// filter out to descendants of the selected node
   if (selectedNode) {
+    hiddenNodes = new Set<string>();
     const toTraverse = new Set<string>();
     if (selectedNode.type === "class") {
       toTraverse.add(selectedNode.id);
@@ -210,6 +362,9 @@ function toELKNode(
       const current: string = toTraverse.values().next().value!;
       toTraverse.delete(current);
       traversed.add(current);
+      if (traversed.size > initialMaxNodes || hiddenOverrides[current] === true) {
+        hiddenNodes.add(current);
+      }
       for (const childNode of classToNodes.get(current)!.flatMap(([, node]) => node.children || [])) {
         const childClass = egraph.nodes[childNode].eclass;
         if (!traversed.has(childClass)) {
@@ -222,18 +377,34 @@ function toELKNode(
         classToNodes.delete(id);
       }
     }
+  } else {
+    hiddenNodes = computeHiddenNodes(egraph, hiddenOverrides, classToNodes, nodeToClass, initialMaxNodes);
   }
 
   const incomingEdges = new Map<EGraphClassID, { nodeID: string; index: number }[]>();
+  const hiddenNodeStats = { visible: 0, total: 0 };
   // use classToNodes instead of egraph.nodes since it's already filtered and we dont want to create
   // export ports for nodes that are not in the graph
   for (const [nodeID, node] of [...classToNodes.values()].flatMap((nodes) => nodes)) {
+    hiddenNodeStats.total++;
+    // hidden nodes don't show out edges
+    if (hiddenNodes.has(nodeID)) {
+      continue;
+    }
+    hiddenNodeStats.visible++;
     for (const [index, child] of (node.children || []).entries()) {
       const childClass = nodeToClass.get(child)!;
       if (!incomingEdges.has(childClass)) {
         incomingEdges.set(childClass, []);
       }
       incomingEdges.get(childClass)!.push({ nodeID, index });
+    }
+  }
+
+  // filter out any classes that have all hidden nodes and no incoming edges
+  for (const [classID, nodes] of classToNodes.entries()) {
+    if (nodes.every(([id]) => hiddenNodes.has(id)) && !incomingEdges.has(classID)) {
+      classToNodes.delete(classID);
     }
   }
 
@@ -287,19 +458,34 @@ function toELKNode(
       edges: [],
     };
     elkRoot.children.push(elkClass);
+    // every e-class can include at most one hidden rendered nodes. Any additional are skipped
+    let addedHiddenNode = false;
     for (const [nodeID, node] of nodes) {
-      const size = getNodeSize(node.op);
+      const hidden = hiddenNodes.has(nodeID);
+      let label = node.op;
+      if (hidden) {
+        if (addedHiddenNode) {
+          continue;
+        }
+        addedHiddenNode = true;
+        label = "?";
+      }
+      const size = getNodeSize(label);
       const elkNodeID = `node-${nodeID}`;
       const elkNode: MyELKNode["children"][0]["children"][0] = {
         id: elkNodeID,
-        data: { label: node.op, id: nodeID, ...(node.subsumed ? { subsumed: true } : {}) },
+        data: { label: label, id: nodeID, ...(node.subsumed ? { subsumed: true } : {}), hidden },
         width: size.width,
         height: size.height,
         ports: [],
-        labels: [{ text: node.op }],
+        labels: [{ text: label }],
         layoutOptions: nodeLayoutOptions,
       };
       elkClass.children.push(elkNode);
+      if (hidden) {
+        // don't add child edges
+        continue;
+      }
       const nPorts = Object.keys(node.children || []).length;
       for (const [index, child] of (node.children || []).entries()) {
         const edgeID = `${nodeID}-${index}`;
@@ -361,7 +547,7 @@ function toELKNode(
     );
     // Use interactive layout if more than half the classes already have positions as a heuristic
     if ((overlappingClasses.false || []).length > (overlappingClasses.true || []).length) {
-      return { elkNode: elkRoot, colors };
+      return { elkNode: elkRoot, colors, hiddenNodeStats };
     }
     // We have some children that were already layed out. So let's update all layout options to be interactive
     // and preserve the positions of the nodes that were already layed out
@@ -403,7 +589,7 @@ function toELKNode(
     }
   }
 
-  return { elkNode: elkRoot, colors };
+  return { elkNode: elkRoot, colors, hiddenNodeStats };
 }
 
 /**

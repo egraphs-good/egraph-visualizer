@@ -10,6 +10,7 @@ import {
   ChevronRightIcon,
   ClipboardDocumentListIcon,
   CogIcon,
+  CircleStackIcon,
 } from "@heroicons/react/24/outline";
 
 import type { EdgeChange, EdgeProps, EdgeTypes, NodeChange, NodeProps } from "@xyflow/react";
@@ -50,6 +51,13 @@ import { FlowClass, FlowEdge, FlowNode, layoutGraph, PreviousLayout, SelectedNod
 import { queryClient } from "./queryClient";
 import { Loading } from "./Loading";
 import { Slider, SliderOutput, SliderTack } from "./react-aria-components-tailwind-starter/src/slider";
+import { NumberField, NumberInput } from "./react-aria-components-tailwind-starter/src/number-field";
+import { Label } from "./react-aria-components-tailwind-starter/src/field";
+
+const INITIAL_MAX_NODES = 500;
+
+// TODO: Switch to finding root nodes with longest path and allow backwards expansions
+// Must only do it on first connected sub-graph
 
 export function EClassNode({ data, selected }: NodeProps<FlowClass>) {
   return (
@@ -74,6 +82,7 @@ export function ENode(
   >
 ) {
   const subsumed = props?.data?.subsumed || false;
+  const hidden = props?.data?.hidden;
   return (
     <div
       className={`p-1 rounded-md outline bg-white ${subsumed ? "outline-gray-300" : "outline-black"} h-full w-full ${
@@ -81,7 +90,7 @@ export function ENode(
       }`}
       ref={props?.outerRef}
     >
-      {props?.outerRef ? <></> : <MyNodeToolbar type="node" id={props!.data!.id} />}
+      {props?.outerRef ? <></> : <MyNodeToolbar type="node" id={props!.data!.id} hidden={hidden} />}
 
       <div
         className={`font-mono text-xs truncate max-w-96 min-w-4 text-center ${subsumed ? "text-gray-300" : ""}`}
@@ -96,8 +105,9 @@ export function ENode(
   );
 }
 
-export function MyNodeToolbar(node: { type: "class" | "node"; id: string }) {
+export function MyNodeToolbar(node: { type: "class" | "node"; id: string; hidden?: boolean }) {
   const selectNode = useContext(SetSelectedNodeContext);
+  const setHidden = useContext(SetHiddenContext);
   const onClick = useCallback(() => selectNode!(node), [selectNode, node]);
   return (
     <NodeToolbar position={Position.Top}>
@@ -107,6 +117,16 @@ export function MyNodeToolbar(node: { type: "class" | "node"; id: string }) {
       >
         Filter
       </button>
+      {node.hidden != undefined ? (
+        <button
+          onClick={() => setHidden!(node.id, !node.hidden)}
+          className="rounded bg-white px-2 py-1 text-xs font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50"
+        >
+          {node.hidden ? "Show" : "Hide"}
+        </button>
+      ) : (
+        <></>
+      )}
     </NodeToolbar>
   );
 }
@@ -129,6 +149,8 @@ const edgeTypes: EdgeTypes = {
 // Context to store a callback to set the node so it can be accessed from the node component
 // without having to pass it manually
 const SetSelectedNodeContext = createContext<null | ((node: { type: "class" | "node"; id: string } | null) => void)>(null);
+
+const SetHiddenContext = createContext<null | ((id: string, hidden: boolean) => void)>(null);
 
 /// Processes changes for selection, returning a new set if any of the changes are selection changes and they change the set of selections
 function processSelectionChanges(
@@ -178,6 +200,9 @@ function Rendering({
   setUseInteractiveLayout,
   mergeEdges,
   setMergeEdges,
+  initialMaxNodes,
+  setInitialMaxNodes,
+  hiddenNodeStats: { visible, total },
 }: {
   nodes: (FlowNode | FlowClass)[];
   edges: FlowEdge[];
@@ -189,6 +214,9 @@ function Rendering({
   setUseInteractiveLayout: (value: boolean) => void;
   mergeEdges: boolean;
   setMergeEdges: (value: boolean) => void;
+  initialMaxNodes: number;
+  setInitialMaxNodes: (value: number) => void;
+  hiddenNodeStats: { visible: number; total: number };
 }) {
   const [selectedEdges, setSelectedEdges] = useState<Set<string>>(new Set());
   const [selectedNodes, setSelectedNodes] = useState<Set<string>>(new Set());
@@ -319,11 +347,25 @@ function Rendering({
                     : "Copy ELK JSON to clipboard"}
                 </MenuItemDescription>
               </MenuItem>
+              <MenuItem>
+                <AccessibleIcon>
+                  <CircleStackIcon />
+                </AccessibleIcon>
+                <NumberField value={initialMaxNodes} onChange={setInitialMaxNodes} step={100} className="flex-1 justify-between">
+                  <Label>Max Initial Nodes</Label>
+                  <NumberInput />
+                </NumberField>
+              </MenuItem>
             </Menu>
           </MenuPopover>
         </MenuTrigger>
       </Panel>
 
+      <Panel position="bottom-center">
+        <span className="text-xs">
+          {visible} / {total} nodes
+        </span>
+      </Panel>
       {/* <Background /> */}
       <Controls />
       {/* Doesn't really show nodes when they are so small */}
@@ -344,7 +386,9 @@ function LayoutFlow({
   aspectRatio: number;
   firstEgraph: string;
 }) {
+  const [hiddenOverrides, setHiddenOverrides] = useState<Record<string, boolean>>({});
   const [useInteractiveLayout, setUseInteractiveLayout] = useState(false);
+  const [initialMaxNodes, setInitialMaxNodes] = useState(INITIAL_MAX_NODES);
   const [mergeEdges, setMergeEdges] = useState(false);
   const previousLayoutRef = useRef<PreviousLayout | null>(null);
   // e-class ID we have currently selected, store the first egraph string as well so we know if this selection is outdated,
@@ -372,9 +416,10 @@ function LayoutFlow({
   );
   const previousLayout = useInteractiveLayout ? previousLayoutRef.current : null;
   const layoutQuery = useQuery({
-    queryKey: ["layout", egraph, getNodeSize, aspectRatio, selectedNode, previousLayout, mergeEdges],
+    queryKey: ["layout", egraph, getNodeSize, aspectRatio, selectedNode, previousLayout, mergeEdges, hiddenOverrides, initialMaxNodes],
     networkMode: "always",
-    queryFn: ({ signal }) => layoutGraph(egraph, getNodeSize, aspectRatio, selectedNode, previousLayout, mergeEdges, signal),
+    queryFn: ({ signal }) =>
+      layoutGraph(egraph, getNodeSize, aspectRatio, selectedNode, previousLayout, mergeEdges, signal, hiddenOverrides, initialMaxNodes),
     staleTime: Infinity,
     retry: false,
     retryOnMount: false,
@@ -386,6 +431,13 @@ function LayoutFlow({
     }
   }, [layoutQuery.status, layoutQuery.data]);
 
+  const setHidden = useCallback(
+    (id: string, hidden: boolean) => {
+      setHiddenOverrides((prev) => ({ ...prev, [id]: hidden }));
+    },
+    [setHiddenOverrides]
+  );
+
   if (layoutQuery.isError) {
     return <div className="p-4">Error: {layoutQuery.error.message}</div>;
   }
@@ -393,26 +445,30 @@ function LayoutFlow({
     return <Loading />;
   }
 
-  const { nodes, edges, elkJSON, nodeToEdges, edgeToNodes } = layoutQuery.data;
-
+  const { nodes, edges, elkJSON, nodeToEdges, edgeToNodes, hiddenNodeStats } = layoutQuery.data;
   return (
     <>
       {layoutQuery.isFetching ? <Loading /> : <></>}
       <SetSelectedNodeContext.Provider value={setSelectedNode}>
-        <ReactFlowProvider>
-          <Rendering
-            nodes={nodes}
-            edges={edges}
-            nodeToEdges={nodeToEdges}
-            edgeToNodes={edgeToNodes}
-            selectedNode={selectedNode}
-            elkJSON={elkJSON}
-            useInteractiveLayout={useInteractiveLayout}
-            setUseInteractiveLayout={setUseInteractiveLayout}
-            mergeEdges={mergeEdges}
-            setMergeEdges={setMergeEdges}
-          />
-        </ReactFlowProvider>
+        <SetHiddenContext.Provider value={setHidden}>
+          <ReactFlowProvider>
+            <Rendering
+              nodes={nodes}
+              edges={edges}
+              nodeToEdges={nodeToEdges}
+              edgeToNodes={edgeToNodes}
+              selectedNode={selectedNode}
+              elkJSON={elkJSON}
+              useInteractiveLayout={useInteractiveLayout}
+              setUseInteractiveLayout={setUseInteractiveLayout}
+              mergeEdges={mergeEdges}
+              setMergeEdges={setMergeEdges}
+              initialMaxNodes={initialMaxNodes}
+              setInitialMaxNodes={setInitialMaxNodes}
+              hiddenNodeStats={hiddenNodeStats}
+            />
+          </ReactFlowProvider>
+        </SetHiddenContext.Provider>
       </SetSelectedNodeContext.Provider>
     </>
   );

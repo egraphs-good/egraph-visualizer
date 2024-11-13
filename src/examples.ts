@@ -4,8 +4,8 @@ const examples = {
   ...import.meta.glob("/examples/extraction-gym/data/*/*.json", { query: "?raw" }),
 };
 
-export const defaultExample = "/examples/manual/homepage.json";
-import DefaultCode from "/examples/manual/homepage.json?raw";
+export const defaultExample = "/examples/manual/eggcc-ackerman-split.json";
+import DefaultCode from "/examples/manual/eggcc-ackerman-split.json?raw";
 export const defaultCode = DefaultCode;
 
 export const exampleNames = Object.keys(examples);
