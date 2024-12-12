@@ -15,7 +15,9 @@ const rootLayoutOptions = {
   "elk.algorithm": "layered",
   "elk.direction": "DOWN",
   // This seems to result in a more compact layout
-  "elk.layered.nodePlacement.strategy": "NETWORK_SIMPLEX",
+  // disable to stop stack size error
+  // https://github.com/kieler/elkjs/issues/314
+  // "elk.layered.nodePlacement.strategy": "NETWORK_SIMPLEX",
   "elk.layered.mergeEdges": "true",
 
   // Can you use spline routing instead which generates non orthogonal edges
