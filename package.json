@@ -1,6 +1,6 @@
 {
   "name": "egraph-visualizer",
-  "version": "2.1.2",
+  "version": "2.2.0",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/egraphs-good/egraph-visualizer.git"

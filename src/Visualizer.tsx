@@ -52,12 +52,27 @@ import { Loading } from "./Loading";
 import { Slider, SliderOutput, SliderTack } from "./react-aria-components-tailwind-starter/src/slider";
 
 export function EClassNode({ data, selected }: NodeProps<FlowClass>) {
+  // Create one div per extra node
+  const extra_nodes = Object.entries(data.extra || {}).map(([key, value]) => (
+    <div
+      key={key}
+      className="truncate"
+      title={`${key}: ${value}`}
+      style={{ fontSize: 6 }}
+    >
+      {key != "" && <span className="pr-1 font-bold">{key}</span>}
+      <span>{value}</span>
+    </div>
+  ));
   return (
     <div
       className={`rounded-md border-dotted border-black h-full w-full ${selected ? "border-2" : "border"}`}
       style={{ backgroundColor: data.color! || "white" }}
       title={data.id}
     >
+      <div className="p-1 font-mono">
+        {...extra_nodes}
+      </div>
       <MyNodeToolbar type="class" id={data.id} />
       <Handle type="target" position={Position.Top} className="invisible" />
       <Handle type="source" position={Position.Bottom} className="invisible" />
@@ -84,7 +99,7 @@ export function ENode(
       {props?.outerRef ? <></> : <MyNodeToolbar type="node" id={props!.data!.id} />}
 
       <div
-        className={`font-mono text-xs truncate max-w-96 min-w-4 text-center ${subsumed ? "text-gray-300" : ""}`}
+        className={`font-mono text-base truncate max-w-96 min-w-6 text-center ${subsumed ? "text-gray-300" : ""}`}
         title={`${props?.data?.id}\n${props?.data?.label}`}
         ref={props?.innerRef}
       >
@@ -103,7 +118,7 @@ export function MyNodeToolbar(node: { type: "class" | "node"; id: string }) {
     <NodeToolbar position={Position.Top}>
       <button
         onClick={onClick}
-        className="rounded bg-white px-2 py-1 text-xs font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50"
+        className="rounded bg-white px-2 py-1 text-base font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50"
       >
         Filter
       </button>

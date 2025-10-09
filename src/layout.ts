@@ -28,18 +28,26 @@ const rootLayoutOptions = {
 // the number of pixels of padding between nodes and between nodes and their parents
 const nodePadding = 5;
 
-const classLayoutOptions = {
-  "elk.algorithm": "layered",
-  "elk.direction": "DOWN",
-  "elk.spacing.componentComponent": nodePadding.toString(),
-  "elk.spacing.nodeNode": nodePadding.toString(),
-  "elk.padding": `[top=${nodePadding},left=${nodePadding},bottom=${nodePadding},right=${nodePadding}]`,
-  "elk.spacing.portPort": "0",
-  // allow ports on e-class to be anywhere
-  // TODO: they only seem to appear on top side of nodes, figure out if there is a way to allow them
-  // to be on all sides if it would result in a better layout
-  portConstraints: "FREE",
-};
+/// amount of padding per extra class item
+const extra_padding = 8;
+function classLayoutOptions(n_extra: number) {
+  let top = nodePadding + n_extra * extra_padding;
+  if (n_extra > 0) {
+    top += 2;
+  }
+  return {
+    "elk.algorithm": "layered",
+    "elk.direction": "DOWN",
+    "elk.spacing.componentComponent": nodePadding.toString(),
+    "elk.spacing.nodeNode": nodePadding.toString(),
+    "elk.padding": `[top=${top},left=${nodePadding},bottom=${nodePadding},right=${nodePadding}]`,
+    "elk.spacing.portPort": "0",
+    // allow ports on e-class to be anywhere
+    // TODO: they only seem to appear on top side of nodes, figure out if there is a way to allow them
+    // to be on all sides if it would result in a better layout
+    portConstraints: "FREE",
+  };
+}
 
 // https://github.com/eclipse/elk/issues/1037#issuecomment-2122136560
 const interactiveOptions = {
@@ -83,6 +91,7 @@ export type FlowClass = Node<
   {
     color: string | null;
     id: string;
+    extra: { [key: string]: string };
     // selected?: boolean
   },
   "class"
@@ -275,10 +284,11 @@ function toELKNode(
   elkRoot.layoutOptions!["elk.aspectRatio"] = aspectRatio as unknown as string;
   for (const [classID, nodes] of classToNodes.entries()) {
     const elkClassID = `class-${classID}`;
+    const extra = class_data[classID] ? Object.fromEntries(Object.entries(class_data[classID]!).filter(([key]) => key !== "type")) : {};
     const elkClass: MyELKNode["children"][0] = {
       id: elkClassID,
-      data: { color: colors.get(class_data[classID]?.type)!, id: classID },
-      layoutOptions: classLayoutOptions,
+      data: { color: colors.get(class_data[classID]?.type)!, id: classID, extra },
+      layoutOptions: classLayoutOptions(Object.keys(extra).length),
       children: [],
       ports: mergeEdges
         ? []

@@ -74,7 +74,7 @@ First install [Yarn](https://yarnpkg.com/getting-started/install), then run:
 
 ```sh
 yarn install
-yarn run [build|start|lint]
+yarn run [build|dev|lint]
 ```
 
 ## Releasing

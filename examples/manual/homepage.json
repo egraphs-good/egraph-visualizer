@@ -37,5 +37,19 @@
       "eclass": "right",
       "children": ["2", "2"]
     }
+  },
+  "class_data": {
+    "top": {
+      "type": "int",
+      "": "baz, bar",
+      "other thing": "another label",
+      "third thing": "baz, bar",
+      "fourth thing": "another label"
+    },
+    "middle": {
+      "type": "int",
+      "": "baz, bar",
+      "other thing": "another label"
+    }
   }
 }
