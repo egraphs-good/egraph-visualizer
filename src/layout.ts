@@ -105,7 +105,7 @@ export type FlowNode = Node<
   },
   "node"
 >;
-export type FlowEdge = Edge<{ points: { x: number; y: number }[] }, "edge">;
+export type FlowEdge = Edge<{ points: { x: number; y: number }[]; isFiltered?: boolean }, "edge">;
 
 type MyELKEdge = ElkExtendedEdge & { sourceNode: string; targetNode: string; edgeID: string };
 /// ELK Node but with additional data added to be later used when converting to react flow nodes
@@ -142,6 +142,7 @@ type Colors = Map<string | undefined, string | null>;
 
 export type PreviousLayout = { layout: MyELKNodeLayedOut; colors: Colors };
 export type SelectedNode = { type: "class" | "node"; id: string };
+export type SelectedNodes = SelectedNode[];
 
 /**
  * Transform a JSON egraph into the laid out nodes.
@@ -152,7 +153,7 @@ export async function layoutGraph(
   egraph: string,
   getNodeSize: (contents: string) => { width: number; height: number },
   aspectRatio: number,
-  selectedNode: SelectedNode | null,
+  selectedNodes: SelectedNodes,
   previousLayout: PreviousLayout | null,
   mergeEdges: boolean,
   signal: AbortSignal
@@ -165,10 +166,10 @@ export async function layoutGraph(
   layout: PreviousLayout;
 }> {
   const parsedEGraph = JSON.parse(egraph);
-  const { elkNode, colors } = toELKNode(parsedEGraph, getNodeSize, selectedNode, aspectRatio, previousLayout, mergeEdges);
+  const { elkNode, colors, filteredNodeIDs } = toELKNode(parsedEGraph, getNodeSize, selectedNodes, aspectRatio, previousLayout, mergeEdges);
   const elkJSON = JSON.stringify(elkNode, null, 2);
   const layout = (await layoutWithCancel(elkNode, signal)) as MyELKNodeLayedOut;
-  const edges = toFlowEdges(layout);
+  const edges = toFlowEdges(layout, filteredNodeIDs);
   const nodes = toFlowNodes(layout);
   const nodeToEdges = new Map(
     [...Object.entries(Object.groupBy(edges, (edge) => edge.source)), ...Object.entries(Object.groupBy(edges, (edge) => edge.target))].map(
@@ -191,11 +192,11 @@ export async function layoutGraph(
 function toELKNode(
   egraph: EGraph,
   getNodeSize: (contents: string) => { width: number; height: number },
-  selectedNode: SelectedNode | null,
+  selectedNodes: SelectedNodes,
   aspectRatio: number,
   previousLayout: PreviousLayout | null,
   mergeEdges: boolean
-): { elkNode: MyELKNode; colors: Colors } {
+): { elkNode: MyELKNode; colors: Colors; filteredNodeIDs: Set<string> } {
   const nodeToClass = new Map<EGraphNodeID, EGraphClassID>();
   const classToNodes = new Map<EGraphClassID, [EGraphNodeID, EGraphNode][]>();
   for (const [id, node] of Object.entries(egraph.nodes)) {
@@ -205,17 +206,33 @@ function toELKNode(
     }
     classToNodes.get(node.eclass)!.push([id, node]);
   }
-  /// filter out to descendants of the selected node
-  if (selectedNode) {
-    const toTraverse = new Set<string>();
-    if (selectedNode.type === "class") {
-      toTraverse.add(selectedNode.id);
+  
+  // Track which node IDs are filtered
+  const filteredNodeIDs = new Set<string>();
+  for (const selectedNode of selectedNodes) {
+    if (selectedNode.type === "node") {
+      filteredNodeIDs.add(`node-${selectedNode.id}`);
     } else {
-      const classID = nodeToClass.get(selectedNode.id)!;
-      toTraverse.add(classID);
-      // if we have selected a node, change the e-class to only include the selected node
-      classToNodes.set(classID, [[selectedNode.id, egraph.nodes[selectedNode.id]]]);
+      filteredNodeIDs.add(`class-${selectedNode.id}`);
     }
+  }
+  
+  /// filter out to descendants of the selected nodes
+  if (selectedNodes.length > 0) {
+    const toTraverse = new Set<string>();
+    
+    // Add all selected nodes to the initial traversal set
+    for (const selectedNode of selectedNodes) {
+      if (selectedNode.type === "class") {
+        toTraverse.add(selectedNode.id);
+      } else {
+        const classID = nodeToClass.get(selectedNode.id)!;
+        toTraverse.add(classID);
+        // if we have selected a node, change the e-class to only include the selected node
+        classToNodes.set(classID, [[selectedNode.id, egraph.nodes[selectedNode.id]]]);
+      }
+    }
+    
     const traversed = new Set<string>();
     while (toTraverse.size > 0) {
       const current: string = toTraverse.values().next().value!;
@@ -373,7 +390,7 @@ function toELKNode(
     );
     // Use interactive layout if more than half the classes already have positions as a heuristic
     if ((overlappingClasses.false || []).length > (overlappingClasses.true || []).length) {
-      return { elkNode: elkRoot, colors };
+      return { elkNode: elkRoot, colors, filteredNodeIDs };
     }
     // We have some children that were already layed out. So let's update all layout options to be interactive
     // and preserve the positions of the nodes that were already layed out
@@ -415,7 +432,7 @@ function toELKNode(
     }
   }
 
-  return { elkNode: elkRoot, colors };
+  return { elkNode: elkRoot, colors, filteredNodeIDs };
 }
 
 /**
@@ -457,7 +474,7 @@ function toFlowNodes(layout: MyELKNodeLayedOut): (FlowClass | FlowNode)[] {
   ]);
 }
 
-function toFlowEdges(layout: MyELKNodeLayedOut): FlowEdge[] {
+function toFlowEdges(layout: MyELKNodeLayedOut, filteredNodeIDs: Set<string>): FlowEdge[] {
   const outerEdges = Object.fromEntries(layout.edges!.map(({ edgeID, sections }) => [edgeID, sections![0]]));
   return layout.children.flatMap(({ x: parentX, y: parentY, edges }) =>
     edges!.map(({ edgeID, sections, sourceNode, targetNode }) => {
@@ -468,6 +485,8 @@ function toFlowEdges(layout: MyELKNodeLayedOut): FlowEdge[] {
         x: x + parentX,
         y: y + parentY,
       }));
+      // Check if this edge originates from a filtered node
+      const isFiltered = filteredNodeIDs.has(sourceNode);
       return {
         type: "edge",
         id: edgeID,
@@ -476,6 +495,7 @@ function toFlowEdges(layout: MyELKNodeLayedOut): FlowEdge[] {
         data: {
           // Combien inner and outer edge show it just shows up once in the rendering and can be selected as a single unit.
           points: [...innerPoints, ...(outerEdge.bendPoints || []), outerEdge.endPoint],
+          isFiltered,
         },
       };
     })
