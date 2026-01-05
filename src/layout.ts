@@ -217,40 +217,8 @@ function toELKNode(
     }
   }
   
-  /// filter out to descendants of the selected nodes
-  if (selectedNodes.length > 0) {
-    const toTraverse = new Set<string>();
-    
-    // Add all selected nodes to the initial traversal set
-    for (const selectedNode of selectedNodes) {
-      if (selectedNode.type === "class") {
-        toTraverse.add(selectedNode.id);
-      } else {
-        const classID = nodeToClass.get(selectedNode.id)!;
-        toTraverse.add(classID);
-        // if we have selected a node, change the e-class to only include the selected node
-        classToNodes.set(classID, [[selectedNode.id, egraph.nodes[selectedNode.id]]]);
-      }
-    }
-    
-    const traversed = new Set<string>();
-    while (toTraverse.size > 0) {
-      const current: string = toTraverse.values().next().value!;
-      toTraverse.delete(current);
-      traversed.add(current);
-      for (const childNode of classToNodes.get(current)!.flatMap(([, node]) => node.children || [])) {
-        const childClass = egraph.nodes[childNode].eclass;
-        if (!traversed.has(childClass)) {
-          toTraverse.add(childClass);
-        }
-      }
-    }
-    for (const id of classToNodes.keys()) {
-      if (!traversed.has(id)) {
-        classToNodes.delete(id);
-      }
-    }
-  }
+  // Note: We do NOT filter out nodes anymore for progressive filtering
+  // Instead, we just mark edges from filtered nodes with a different color
 
   const incomingEdges = new Map<EGraphClassID, { nodeID: string; index: number }[]>();
   // use classToNodes instead of egraph.nodes since it's already filtered and we dont want to create
