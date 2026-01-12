@@ -207,8 +207,8 @@ function toELKNode(
     classToNodes.get(node.eclass)!.push([id, node]);
   }
   /// filter out to descendants of the selected nodes
+  const toTraverse = new Set<string>();
   for (const selectedNode of selectedNodes) {
-    const toTraverse = new Set<string>();
     if (selectedNode.type === "class") {
       toTraverse.add(selectedNode.id);
     } else {
@@ -217,18 +217,20 @@ function toELKNode(
       // if we have selected a node, change the e-class to only include the selected node
       classToNodes.set(classID, [[selectedNode.id, egraph.nodes[selectedNode.id]]]);
     }
-    const traversed = new Set<string>();
-    while (toTraverse.size > 0) {
-      const current: string = toTraverse.values().next().value!;
-      toTraverse.delete(current);
-      traversed.add(current);
-      for (const childNode of classToNodes.get(current)!.flatMap(([, node]) => node.children || [])) {
-        const childClass = egraph.nodes[childNode].eclass;
-        if (!traversed.has(childClass)) {
-          toTraverse.add(childClass);
-        }
+  }
+  const traversed = new Set<string>();
+  while (toTraverse.size > 0) {
+    const current: string = toTraverse.values().next().value!;
+    toTraverse.delete(current);
+    traversed.add(current);
+    for (const childNode of classToNodes.get(current)!.flatMap(([, node]) => node.children || [])) {
+      const childClass = egraph.nodes[childNode].eclass;
+      if (!traversed.has(childClass)) {
+        toTraverse.add(childClass);
       }
     }
+  }
+  if (selectedNodes.length > 0) {
     for (const id of classToNodes.keys()) {
       if (!traversed.has(id)) {
         classToNodes.delete(id);
