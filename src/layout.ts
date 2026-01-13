@@ -92,7 +92,7 @@ export type FlowClass = Node<
     color: string | null;
     id: string;
     extra: { [key: string]: string };
-    // selected?: boolean
+    selected: boolean;
   },
   "class"
 >;
@@ -101,7 +101,7 @@ export type FlowNode = Node<
     label: string;
     id: string;
     subsumed?: boolean;
-    // selected?: boolean
+    selected: boolean;
   },
   "node"
 >;
@@ -142,6 +142,7 @@ type Colors = Map<string | undefined, string | null>;
 
 export type PreviousLayout = { layout: MyELKNodeLayedOut; colors: Colors };
 export type SelectedNode = { type: "class" | "node"; id: string };
+export type SelectedNodes = SelectedNode[];
 
 /**
  * Transform a JSON egraph into the laid out nodes.
@@ -152,7 +153,7 @@ export async function layoutGraph(
   egraph: string,
   getNodeSize: (contents: string) => { width: number; height: number },
   aspectRatio: number,
-  selectedNode: SelectedNode | null,
+  selectedNodes: SelectedNodes,
   previousLayout: PreviousLayout | null,
   mergeEdges: boolean,
   signal: AbortSignal
@@ -165,7 +166,7 @@ export async function layoutGraph(
   layout: PreviousLayout;
 }> {
   const parsedEGraph = JSON.parse(egraph);
-  const { elkNode, colors } = toELKNode(parsedEGraph, getNodeSize, selectedNode, aspectRatio, previousLayout, mergeEdges);
+  const { elkNode, colors } = toELKNode(parsedEGraph, getNodeSize, selectedNodes, aspectRatio, previousLayout, mergeEdges);
   const elkJSON = JSON.stringify(elkNode, null, 2);
   const layout = (await layoutWithCancel(elkNode, signal)) as MyELKNodeLayedOut;
   const edges = toFlowEdges(layout);
@@ -191,7 +192,7 @@ export async function layoutGraph(
 function toELKNode(
   egraph: EGraph,
   getNodeSize: (contents: string) => { width: number; height: number },
-  selectedNode: SelectedNode | null,
+  selectedNodes: SelectedNodes,
   aspectRatio: number,
   previousLayout: PreviousLayout | null,
   mergeEdges: boolean
@@ -205,9 +206,9 @@ function toELKNode(
     }
     classToNodes.get(node.eclass)!.push([id, node]);
   }
-  /// filter out to descendants of the selected node
-  if (selectedNode) {
-    const toTraverse = new Set<string>();
+  /// filter out to descendants of the selected nodes
+  const toTraverse = new Set<string>();
+  for (const selectedNode of selectedNodes) {
     if (selectedNode.type === "class") {
       toTraverse.add(selectedNode.id);
     } else {
@@ -216,18 +217,20 @@ function toELKNode(
       // if we have selected a node, change the e-class to only include the selected node
       classToNodes.set(classID, [[selectedNode.id, egraph.nodes[selectedNode.id]]]);
     }
-    const traversed = new Set<string>();
-    while (toTraverse.size > 0) {
-      const current: string = toTraverse.values().next().value!;
-      toTraverse.delete(current);
-      traversed.add(current);
-      for (const childNode of classToNodes.get(current)!.flatMap(([, node]) => node.children || [])) {
-        const childClass = egraph.nodes[childNode].eclass;
-        if (!traversed.has(childClass)) {
-          toTraverse.add(childClass);
-        }
+  }
+  const traversed = new Set<string>();
+  while (toTraverse.size > 0) {
+    const current: string = toTraverse.values().next().value!;
+    toTraverse.delete(current);
+    traversed.add(current);
+    for (const childNode of classToNodes.get(current)!.flatMap(([, node]) => node.children || [])) {
+      const childClass = egraph.nodes[childNode].eclass;
+      if (!traversed.has(childClass)) {
+        toTraverse.add(childClass);
       }
     }
+  }
+  if (selectedNodes.length > 0) {
     for (const id of classToNodes.keys()) {
       if (!traversed.has(id)) {
         classToNodes.delete(id);
@@ -285,16 +288,17 @@ function toELKNode(
   for (const [classID, nodes] of classToNodes.entries()) {
     const elkClassID = `class-${classID}`;
     const extra = class_data[classID] ? Object.fromEntries(Object.entries(class_data[classID]!).filter(([key]) => key !== "type")) : {};
+    const selected = selectedNodes.some((n) => n.type === "class" && n.id === classID);
     const elkClass: MyELKNode["children"][0] = {
       id: elkClassID,
-      data: { color: colors.get(class_data[classID]?.type)!, id: classID, extra },
+      data: { color: colors.get(class_data[classID]?.type)!, id: classID, extra, selected },
       layoutOptions: classLayoutOptions(Object.keys(extra).length),
       children: [],
       ports: mergeEdges
         ? []
         : (incomingEdges.get(classID) || []).map(({ nodeID, index }) => ({
-            id: `port-class-incoming-${nodeID}-${index}`,
-          })),
+          id: `port-class-incoming-${nodeID}-${index}`,
+        })),
 
       edges: [],
     };
@@ -302,9 +306,10 @@ function toELKNode(
     for (const [nodeID, node] of nodes) {
       const size = getNodeSize(node.op);
       const elkNodeID = `node-${nodeID}`;
+      const selected = selectedNodes.some((n) => n.type === "node" && n.id === nodeID);
       const elkNode: MyELKNode["children"][0]["children"][0] = {
         id: elkNodeID,
-        data: { label: node.op, id: nodeID, ...(node.subsumed ? { subsumed: true } : {}) },
+        data: { label: node.op, id: nodeID, ...(node.subsumed ? { subsumed: true } : {}), selected },
         width: size.width,
         height: size.height,
         ports: [],

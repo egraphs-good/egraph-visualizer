@@ -46,7 +46,7 @@ import {
 } from "./react-aria-components-tailwind-starter/src/menu";
 import { useCopyToClipboard } from "./react-aria-components-tailwind-starter/src/hooks/use-clipboard";
 import { keepPreviousData, QueryClientProvider, useQuery } from "@tanstack/react-query";
-import { FlowClass, FlowEdge, FlowNode, layoutGraph, PreviousLayout, SelectedNode } from "./layout";
+import { FlowClass, FlowEdge, FlowNode, layoutGraph, PreviousLayout, SelectedNodes } from "./layout";
 import { queryClient } from "./queryClient";
 import { Loading } from "./Loading";
 import { Slider, SliderOutput, SliderTack } from "./react-aria-components-tailwind-starter/src/slider";
@@ -64,16 +64,17 @@ export function EClassNode({ data, selected }: NodeProps<FlowClass>) {
       <span>{value}</span>
     </div>
   ));
+  const border = data.selected ? "border-indigo-600" : "border-black";
   return (
     <div
-      className={`rounded-md border-dotted border-black h-full w-full ${selected ? "border-2" : "border"}`}
+      className={`rounded-md border-dotted ${border} h-full w-full ${selected ? "border-2" : "border"}`}
       style={{ backgroundColor: data.color! || "white" }}
       title={data.id}
     >
       <div className="p-1 font-mono">
         {...extra_nodes}
       </div>
-      <MyNodeToolbar type="class" id={data.id} />
+      <MyNodeToolbar type="class" id={data.id} selected={data.selected} />
       <Handle type="target" position={Position.Top} className="invisible" />
       <Handle type="source" position={Position.Bottom} className="invisible" />
     </div>
@@ -89,14 +90,16 @@ export function ENode(
   >
 ) {
   const subsumed = props?.data?.subsumed || false;
+  const selected = props?.data?.selected || false;
+  const outline = subsumed && selected ? "outline-indigo-100" : subsumed ? "outline-gray-300" : selected ? "outline-indigo-600" : "outline-black";
   return (
     <div
-      className={`p-1 rounded-md outline bg-white ${subsumed ? "outline-gray-300" : "outline-black"} h-full w-full ${
+      className={`p-1 rounded-md outline bg-white ${outline} h-full w-full ${
         props?.selected ? "outline-2" : "outline-1"
       }`}
       ref={props?.outerRef}
     >
-      {props?.outerRef ? <></> : <MyNodeToolbar type="node" id={props!.data!.id} />}
+      {props?.outerRef ? <></> : <MyNodeToolbar type="node" id={props!.data!.id} selected={selected} />}
 
       <div
         className={`font-mono text-base truncate max-w-96 min-w-6 text-center ${subsumed ? "text-gray-300" : ""}`}
@@ -111,7 +114,7 @@ export function ENode(
   );
 }
 
-export function MyNodeToolbar(node: { type: "class" | "node"; id: string }) {
+export function MyNodeToolbar(node: { type: "class" | "node"; id: string, selected: boolean }) {
   const selectNode = useContext(SetSelectedNodeContext);
   const onClick = useCallback(() => selectNode!(node), [selectNode, node]);
   return (
@@ -120,7 +123,7 @@ export function MyNodeToolbar(node: { type: "class" | "node"; id: string }) {
         onClick={onClick}
         className="rounded bg-white px-2 py-1 text-base font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50"
       >
-        Filter
+        {node.selected ? "Unfilter" : "Filter"}
       </button>
     </NodeToolbar>
   );
@@ -185,7 +188,7 @@ const proOptions = { hideAttribution: true };
 function Rendering({
   nodes: initialNodes,
   edges: initialEdges,
-  selectedNode: filteredNode,
+  selectedNodes: filteredNodes,
   nodeToEdges,
   edgeToNodes,
   elkJSON,
@@ -196,7 +199,7 @@ function Rendering({
 }: {
   nodes: (FlowNode | FlowClass)[];
   edges: FlowEdge[];
-  selectedNode: SelectedNode | null;
+  selectedNodes: SelectedNodes;
   nodeToEdges: Map<string, string[]>;
   edgeToNodes: Map<string, string[]>;
   elkJSON: string;
@@ -281,7 +284,7 @@ function Rendering({
       defaultEdgeOptions={defaultEdgeOptions}
       proOptions={proOptions}
     >
-      {filteredNode ? (
+      {filteredNodes.length > 0 ? (
         <Panel position="top-center">
           <button
             className="rounded bg-white px-2 py-1 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 hover:shadow-md hover:ring-gray-400 transition-all duration-200"
@@ -364,18 +367,37 @@ function LayoutFlow({
   const previousLayoutRef = useRef<PreviousLayout | null>(null);
   // e-class ID we have currently selected, store the first egraph string as well so we know if this selection is outdated,
   // if our whole list of egraphs changes, but keep the selection if we have simply added a new egraph on
-  const [selectedNodeWithEGraph, setSelectedNodeWithEGraph] = useState<(SelectedNode & { firstEgraph: string }) | null>(null);
-  const selectedNode = useMemo(() => {
-    if (selectedNodeWithEGraph && selectedNodeWithEGraph.firstEgraph === firstEgraph) {
-      return selectedNodeWithEGraph;
+  const [selectedNodesWithEGraph, setSelectedNodesWithEGraph] = useState<{selected: SelectedNodes, firstEgraph: string }>({selected: [], firstEgraph});
+  const selectedNodes = useMemo(() => {
+    if (selectedNodesWithEGraph && selectedNodesWithEGraph.firstEgraph === firstEgraph) {
+      return selectedNodesWithEGraph.selected;
     }
-    return null;
-  }, [selectedNodeWithEGraph, firstEgraph]);
-  const setSelectedNode = useCallback(
+    return [];
+  }, [selectedNodesWithEGraph, firstEgraph]);
+  // Callback to toggle whether the given node is selected
+  // if node is null, clear selection
+  const toggleSelectedNode = useCallback(
     (node: { type: "class" | "node"; id: string } | null) => {
-      setSelectedNodeWithEGraph(node ? { ...node, firstEgraph } : null);
+      if (!node) {
+        setSelectedNodesWithEGraph({ selected: [], firstEgraph });
+        return;
+      }
+      // If the e-graph has changed, reset selection
+      setSelectedNodesWithEGraph((prev) => {
+        if (prev.firstEgraph !== firstEgraph) {
+          return { selected: [node], firstEgraph };
+        }
+        const newSelected = [...prev.selected];
+        const index = newSelected.findIndex((n) => n.type === node.type && n.id === node.id);
+        if (index >= 0) {
+          newSelected.splice(index, 1);
+        } else {
+          newSelected.push(node);
+        }
+        return { selected: newSelected, firstEgraph };
+      });
     },
-    [setSelectedNodeWithEGraph, firstEgraph]
+    [setSelectedNodesWithEGraph, firstEgraph]
   );
 
   const getNodeSize = useCallback(
@@ -387,9 +409,9 @@ function LayoutFlow({
   );
   const previousLayout = useInteractiveLayout ? previousLayoutRef.current : null;
   const layoutQuery = useQuery({
-    queryKey: ["layout", egraph, getNodeSize, aspectRatio, selectedNode, previousLayout, mergeEdges],
+    queryKey: ["layout", egraph, getNodeSize, aspectRatio, selectedNodes, previousLayout, mergeEdges],
     networkMode: "always",
-    queryFn: ({ signal }) => layoutGraph(egraph, getNodeSize, aspectRatio, selectedNode, previousLayout, mergeEdges, signal),
+    queryFn: ({ signal }) => layoutGraph(egraph, getNodeSize, aspectRatio, selectedNodes, previousLayout, mergeEdges, signal),
     staleTime: Infinity,
     retry: false,
     retryOnMount: false,
@@ -413,14 +435,14 @@ function LayoutFlow({
   return (
     <>
       {layoutQuery.isFetching ? <Loading /> : <></>}
-      <SetSelectedNodeContext.Provider value={setSelectedNode}>
+      <SetSelectedNodeContext.Provider value={toggleSelectedNode}>
         <ReactFlowProvider>
           <Rendering
             nodes={nodes}
             edges={edges}
             nodeToEdges={nodeToEdges}
             edgeToNodes={edgeToNodes}
-            selectedNode={selectedNode}
+            selectedNodes={selectedNodes}
             elkJSON={elkJSON}
             useInteractiveLayout={useInteractiveLayout}
             setUseInteractiveLayout={setUseInteractiveLayout}
