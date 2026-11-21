@@ -28,13 +28,10 @@ const rootLayoutOptions = {
 // the number of pixels of padding between nodes and between nodes and their parents
 const nodePadding = 5;
 
-/// amount of padding per extra class item
-const extra_padding = 8;
-function classLayoutOptions(n_extra: number) {
-  let top = nodePadding + n_extra * extra_padding;
-  if (n_extra > 0) {
-    top += 2;
-  }
+function classLayoutOptions(extraSize: { width: number; height: number }): Record<string, string> {
+  const hasExtra = extraSize.height > 0 || extraSize.width > 0;
+  const top = hasExtra ? Math.ceil(extraSize.height) + 4 : nodePadding;
+  const minWidth = hasExtra ? Math.ceil(extraSize.width) + 4 : 0;
   return {
     "elk.algorithm": "layered",
     "elk.direction": "DOWN",
@@ -42,6 +39,12 @@ function classLayoutOptions(n_extra: number) {
     "elk.spacing.nodeNode": nodePadding.toString(),
     "elk.padding": `[top=${top},left=${nodePadding},bottom=${nodePadding},right=${nodePadding}]`,
     "elk.spacing.portPort": "0",
+    ...(minWidth > 0
+      ? {
+          "elk.nodeSize.constraints": "MINIMUM_SIZE",
+          "elk.nodeSize.minimum": `(${minWidth}, 0)`,
+        }
+      : {}),
     // allow ports on e-class to be anywhere
     // TODO: they only seem to appear on top side of nodes, figure out if there is a way to allow them
     // to be on all sides if it would result in a better layout
@@ -152,6 +155,7 @@ export type SelectedNodes = SelectedNode[];
 export async function layoutGraph(
   egraph: string,
   getNodeSize: (contents: string) => { width: number; height: number },
+  getExtraSize: (extra: { [key: string]: string }) => { width: number; height: number },
   aspectRatio: number,
   selectedNodes: SelectedNodes,
   previousLayout: PreviousLayout | null,
@@ -166,7 +170,7 @@ export async function layoutGraph(
   layout: PreviousLayout;
 }> {
   const parsedEGraph = JSON.parse(egraph);
-  const { elkNode, colors } = toELKNode(parsedEGraph, getNodeSize, selectedNodes, aspectRatio, previousLayout, mergeEdges);
+  const { elkNode, colors } = toELKNode(parsedEGraph, getNodeSize, getExtraSize, selectedNodes, aspectRatio, previousLayout, mergeEdges);
   const elkJSON = JSON.stringify(elkNode, null, 2);
   const layout = (await layoutWithCancel(elkNode, signal)) as MyELKNodeLayedOut;
   const edges = toFlowEdges(layout);
@@ -192,6 +196,7 @@ export async function layoutGraph(
 function toELKNode(
   egraph: EGraph,
   getNodeSize: (contents: string) => { width: number; height: number },
+  getExtraSize: (extra: { [key: string]: string }) => { width: number; height: number },
   selectedNodes: SelectedNodes,
   aspectRatio: number,
   previousLayout: PreviousLayout | null,
@@ -292,7 +297,7 @@ function toELKNode(
     const elkClass: MyELKNode["children"][0] = {
       id: elkClassID,
       data: { color: colors.get(class_data[classID]?.type)!, id: classID, extra, selected },
-      layoutOptions: classLayoutOptions(Object.keys(extra).length),
+      layoutOptions: classLayoutOptions(getExtraSize(extra)),
       children: [],
       ports: mergeEdges
         ? []

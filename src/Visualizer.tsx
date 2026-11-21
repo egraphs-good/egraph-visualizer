@@ -66,15 +66,13 @@ export function EClassNode({ data, selected }: NodeProps<FlowClass>) {
   ));
   const border = data.selected ? "border-indigo-600" : "border-black";
   return (
-    <div
-      className={`rounded-md border-dotted ${border} h-full w-full ${selected ? "border-2" : "border"}`}
-      style={{ backgroundColor: data.color! || "white" }}
-      title={data.id}
-    >
-      <div className="p-1 font-mono">
-        {...extra_nodes}
-      </div>
-      <MyNodeToolbar type="class" id={data.id} selected={data.selected} />
+      <div
+        className={`rounded-md border-dotted ${border} h-full w-full ${selected ? "border-2" : "border"}`}
+        style={{ backgroundColor: data.color! || "white" }}
+        title={data.id}
+      >
+        {extra_nodes.length > 0 && <div className="p-1 font-mono">{...extra_nodes}</div>}
+        <MyNodeToolbar type="class" id={data.id} selected={data.selected} />
       <Handle type="target" position={Position.Top} className="invisible" />
       <Handle type="source" position={Position.Bottom} className="invisible" />
     </div>
@@ -353,12 +351,14 @@ function LayoutFlow({
   egraph,
   outerElem,
   innerElem,
+  extraElem,
   aspectRatio,
   firstEgraph,
 }: {
   egraph: string;
   outerElem: HTMLDivElement;
   innerElem: HTMLDivElement;
+  extraElem: HTMLDivElement;
   aspectRatio: number;
   firstEgraph: string;
 }) {
@@ -407,11 +407,40 @@ function LayoutFlow({
     },
     [outerElem, innerElem]
   );
+  const getExtraSize = useCallback(
+    (extra: { [key: string]: string }) => {
+      const entries = Object.entries(extra);
+      if (entries.length === 0) {
+        return { width: 0, height: 0 };
+      }
+      const rows = entries.map(([key, value]) => {
+        const row = document.createElement("div");
+        row.className = "truncate";
+        row.title = `${key}: ${value}`;
+        row.style.fontSize = "6px";
+        if (key !== "") {
+          const keySpan = document.createElement("span");
+          keySpan.className = "pr-1 font-bold";
+          keySpan.textContent = key;
+          row.appendChild(keySpan);
+        }
+        const valSpan = document.createElement("span");
+        valSpan.textContent = String(value);
+        row.appendChild(valSpan);
+        return row;
+      });
+      extraElem.replaceChildren(...rows);
+      const { width, height } = extraElem.getBoundingClientRect();
+      extraElem.replaceChildren();
+      return { width, height };
+    },
+    [extraElem]
+  );
   const previousLayout = useInteractiveLayout ? previousLayoutRef.current : null;
   const layoutQuery = useQuery({
-    queryKey: ["layout", egraph, getNodeSize, aspectRatio, selectedNodes, previousLayout, mergeEdges],
+    queryKey: ["layout", egraph, getNodeSize, getExtraSize, aspectRatio, selectedNodes, previousLayout, mergeEdges],
     networkMode: "always",
-    queryFn: ({ signal }) => layoutGraph(egraph, getNodeSize, aspectRatio, selectedNodes, previousLayout, mergeEdges, signal),
+    queryFn: ({ signal }) => layoutGraph(egraph, getNodeSize, getExtraSize, aspectRatio, selectedNodes, previousLayout, mergeEdges, signal),
     staleTime: Infinity,
     retry: false,
     retryOnMount: false,
@@ -491,6 +520,7 @@ export function Visualizer({ egraphs, height = null, resize = false }: { egraphs
 
   const [outerElem, setOuterElem] = useState<HTMLDivElement | null>(null);
   const [innerElem, setInnerElem] = useState<HTMLDivElement | null>(null);
+  const [extraElem, setExtraElem] = useState<HTMLDivElement | null>(null);
   const aspectRatio = rootElem ? rootElem.clientWidth / rootElem.clientHeight : null;
 
   // If we are at null, then use the last item in the list
@@ -506,18 +536,20 @@ export function Visualizer({ egraphs, height = null, resize = false }: { egraphs
 
   return (
     <div className={`twp w-full relative ${resize ? "resize-y" : ""}`} style={{ height: height || "100%" }} ref={setRootElem}>
-      {/* Hidden node to measure text size  */}
+      {/* Hidden elements to measure node and extra class_data sizes */}
       <div className="invisible absolute">
         <ENode outerRef={setOuterElem} innerRef={setInnerElem} />
+        <div className="p-1 font-mono w-max max-w-96" ref={setExtraElem} />
       </div>
       <SelectSider length={egraphs.length} onSelect={onSelect} selected={actualSelected} />
-      {outerElem && innerElem && aspectRatio && (
+      {outerElem && innerElem && extraElem && aspectRatio && (
         <LayoutFlow
           aspectRatio={aspectRatio}
           firstEgraph={egraphs[0]}
           egraph={egraphs[actualSelected]}
           outerElem={outerElem}
           innerElem={innerElem}
+          extraElem={extraElem}
         />
       )}
     </div>
