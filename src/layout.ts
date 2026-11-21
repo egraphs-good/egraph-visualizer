@@ -4,6 +4,8 @@ import ELK, { ElkExtendedEdge, ElkNode } from "elkjs/lib/elk-api";
 import { Node, Edge } from "@xyflow/react";
 // Make worker inline because if its external cannot be loaded from esm.sh due to CORS
 import ELKWorker from "elkjs/lib/elk-worker?worker&inline";
+import { InlineLevel, InlineResult, inlineLeaves } from "./inline";
+import { TextSyntax } from "./text";
 
 // Elk has a *huge* amount of options to configure. To see everything you can
 // tweak check out:
@@ -274,6 +276,8 @@ export async function layoutGraph(
   selectedNodes: SelectedNodes,
   previousLayout: PreviousLayout | null,
   mergeEdges: boolean,
+  inlineLevel: InlineLevel,
+  inlineSyntax: TextSyntax,
   signal: AbortSignal
 ): Promise<{
   nodes: (FlowNode | FlowClass)[];
@@ -283,11 +287,29 @@ export async function layoutGraph(
   elkJSON: string;
   layout: PreviousLayout;
   subgraph: FilteredEGraph;
+  inlineInfo: Omit<InlineResult, "egraph">;
 }> {
   // Yield past React's commit/effect phase so getExtraSize can call flushSync safely.
   await Promise.resolve();
   const parsedEGraph = JSON.parse(egraph) as EGraph;
-  const subgraph = filterEGraph(parsedEGraph, selectedNodes);
+  const protectedClasses = new Set<EGraphClassID>();
+  for (const selected of selectedNodes) {
+    if (selected.type === "class") {
+      protectedClasses.add(selected.id);
+    } else {
+      const owningClass = parsedEGraph.nodes[selected.id]?.eclass;
+      if (owningClass !== undefined) {
+        protectedClasses.add(owningClass);
+      }
+    }
+  }
+  const { egraph: inlinedEGraph, appliedPasses, canInlineMore } = inlineLeaves(
+    parsedEGraph,
+    inlineLevel,
+    inlineSyntax,
+    protectedClasses
+  );
+  const subgraph = filterEGraph(inlinedEGraph, selectedNodes);
   const { elkNode, colors } = toELKNode(subgraph, getNodeSize, getExtraSize, selectedNodes, aspectRatio, previousLayout, mergeEdges);
   const elkJSON = JSON.stringify(elkNode, null, 2);
   const layout = (await layoutWithCancel(elkNode, signal)) as MyELKNodeLayedOut;
@@ -307,6 +329,7 @@ export async function layoutGraph(
     edgeToNodes,
     nodeToEdges,
     subgraph,
+    inlineInfo: { appliedPasses, canInlineMore },
   };
 }
 

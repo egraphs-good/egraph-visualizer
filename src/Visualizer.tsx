@@ -36,6 +36,8 @@ import { AnyModel } from "@anywidget/types";
 import { flushSync } from "react-dom";
 import { createRoot, Root } from "react-dom/client";
 import { AccessibleIcon } from "./react-aria-components-tailwind-starter/src/accessible-icon";
+import { Button, ButtonGroup } from "./react-aria-components-tailwind-starter/src/button";
+import { MinusIcon, PlusIcon } from "./react-aria-components-tailwind-starter/src/icons";
 import {
   Menu,
   MenuButton,
@@ -48,6 +50,7 @@ import {
 } from "./react-aria-components-tailwind-starter/src/menu";
 import { useCopyToClipboard } from "./react-aria-components-tailwind-starter/src/hooks/use-clipboard";
 import { keepPreviousData, QueryClientProvider, useQuery } from "@tanstack/react-query";
+import { InlineLevel } from "./inline";
 import { FilteredEGraph, FlowClass, FlowEdge, FlowNode, layoutGraph, PreviousLayout, SelectedNodes } from "./layout";
 import { queryClient } from "./queryClient";
 import { Loading } from "./Loading";
@@ -211,6 +214,9 @@ function Rendering({
   setShowText,
   textSyntax,
   setTextSyntax,
+  inlineLevel,
+  setInlineLevel,
+  inlineInfo,
 }: {
   nodes: (FlowNode | FlowClass)[];
   edges: FlowEdge[];
@@ -230,6 +236,9 @@ function Rendering({
   setShowText: (value: boolean) => void;
   textSyntax: TextSyntax;
   setTextSyntax: (value: TextSyntax) => void;
+  inlineLevel: InlineLevel;
+  setInlineLevel: (value: InlineLevel) => void;
+  inlineInfo: { appliedPasses: number; canInlineMore: boolean };
 }) {
   // Trigger this when we want to skip the next fitView, for example when we change selection
   const skipNextFitRef = useRef(false);
@@ -299,6 +308,22 @@ function Rendering({
     }
   }, [showText, nodeInitialized, reactFlow]);
 
+  const effectivePasses =
+    inlineLevel === "max" ? inlineInfo.appliedPasses : Math.min(inlineLevel, inlineInfo.appliedPasses);
+  const showInlineControls = inlineInfo.canInlineMore || effectivePasses > 0;
+  const handleDecreaseInline = useCallback(
+    () => setInlineLevel(Math.max(0, effectivePasses - 1)),
+    [effectivePasses, setInlineLevel]
+  );
+  const handleIncreaseInline = useCallback(
+    () => setInlineLevel(effectivePasses + 1),
+    [effectivePasses, setInlineLevel]
+  );
+  const handleToggleMaxInline = useCallback(
+    () => setInlineLevel(inlineLevel === "max" ? 0 : "max"),
+    [inlineLevel, setInlineLevel]
+  );
+
   const [isOpen, setOpen] = useState(false);
   const textClipboard = useCopyToClipboard();
   const jsonClipboard = useCopyToClipboard();
@@ -353,88 +378,135 @@ function Rendering({
         <></>
       )}
       <Panel position="top-right">
-        <MenuTrigger>
-          <MenuButton onPress={() => setOpen((prev) => !prev)} noIndicator variant="plain" isIconOnly>
-            <AccessibleIcon aria-label="Open setting menu">
-              <CogIcon className="size-6" />
-            </AccessibleIcon>
-          </MenuButton>
-          <MenuPopover placement="bottom right" isOpen={isOpen} onOpenChange={setOpen}>
-            <Menu>
-              <MenuItem onAction={handleToggleShowText} className="cursor-pointer">
-                <AccessibleIcon>
-                  <CodeBracketIcon />
-                </AccessibleIcon>
-                <MenuItemLabel>Text view</MenuItemLabel>
-                <MenuItemDescription>
-                  {showText ? "Hide synchronized BNF text view" : "Show synchronized BNF text view below graph"}
-                </MenuItemDescription>
-              </MenuItem>
-              <MenuItem onAction={handleToggleTextSyntax} className="cursor-pointer">
-                <AccessibleIcon>
-                  <CodeBracketIcon />
-                </AccessibleIcon>
-                <MenuItemLabel>Syntax: {textSyntax === "sexpr" ? "S-expr" : "Call"}</MenuItemLabel>
-                <MenuItemDescription>
-                  {textSyntax === "sexpr" ? "(op a b) · switch to Call op(a, b)" : "op(a, b) · switch to S-expr (op a b)"}
-                </MenuItemDescription>
-              </MenuItem>
-              <MenuSeparator />
-              <MenuItem onAction={handleToggleInteractiveLayout} className="cursor-pointer">
-                <AccessibleIcon>{useInteractiveLayout ? <ArrowUturnRightIcon /> : <ArrowLongRightIcon />}</AccessibleIcon>
-                <MenuItemLabel>Interactive layout</MenuItemLabel>
-                <MenuItemDescription>
-                  {useInteractiveLayout ? "Layout independently of previous positions" : "Layout interactively based on previous positions"}
-                </MenuItemDescription>
-              </MenuItem>
-              <MenuItem onAction={handleToggleMergeEdges} className="cursor-pointer">
-                <AccessibleIcon>{mergeEdges ? <ChevronRightIcon /> : <Bars2Icon />}</AccessibleIcon>
-                <MenuItemLabel>Merge edges</MenuItemLabel>
-                <MenuItemDescription>{mergeEdges ? "Seperate ports for incoming edges" : "Merge all incoming edges"}</MenuItemDescription>
-              </MenuItem>
-              <MenuSeparator />
-              <MenuItem onAction={handleCopyText} className="cursor-pointer">
-                <AccessibleIcon>
-                  <ClipboardDocumentListIcon />
-                </AccessibleIcon>
-                <MenuItemLabel>Copy text</MenuItemLabel>
-                <MenuItemDescription>
-                  {textClipboard.copied
-                    ? "Copied BNF text to clipboard"
-                    : textClipboard.error
-                    ? `Failed to copy text to clipboard ${textClipboard.error.message}`
-                    : "Copy BNF text to clipboard"}
-                </MenuItemDescription>
-              </MenuItem>
-              <MenuItem onAction={handleCopyJson} className="cursor-pointer">
-                <AccessibleIcon>
-                  <ClipboardDocumentListIcon />
-                </AccessibleIcon>
-                <MenuItemLabel>Copy JSON</MenuItemLabel>
-                <MenuItemDescription>
-                  {jsonClipboard.copied
-                    ? "Copied e-graph JSON to clipboard"
-                    : jsonClipboard.error
-                    ? `Failed to copy e-graph JSON to clipboard ${jsonClipboard.error.message}`
-                    : "Copy e-graph JSON to clipboard"}
-                </MenuItemDescription>
-              </MenuItem>
-              <MenuItem onAction={handleCopyElk} className="cursor-pointer">
-                <AccessibleIcon>
-                  <ClipboardDocumentListIcon />
-                </AccessibleIcon>
-                <MenuItemLabel>Copy ELK</MenuItemLabel>
-                <MenuItemDescription>
-                  {elkClipboard.copied
-                    ? "Copied ELK JSON to clipboard"
-                    : elkClipboard.error
-                    ? `Failed to copy ELK JSON to clipboard ${elkClipboard.error.message}`
-                    : "Copy ELK JSON to clipboard"}
-                </MenuItemDescription>
-              </MenuItem>
-            </Menu>
-          </MenuPopover>
-        </MenuTrigger>
+        <div className="flex items-center gap-2">
+          {showInlineControls && (
+            <div
+              className="flex items-center gap-1.5 rounded-md bg-white/90 px-2 py-1 text-xs text-gray-700 shadow-sm ring-1 ring-inset ring-gray-300 backdrop-blur-sm"
+              title="Fold edge-reducing singleton e-classes (1 parent or ≤1 child) into parent labels"
+            >
+              <span className="font-medium text-gray-600">Inline</span>
+              <span className="font-mono text-gray-900 min-w-[1ch] text-center">{effectivePasses}</span>
+              <ButtonGroup>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  isIconOnly
+                  isDisabled={effectivePasses === 0}
+                  onPress={handleDecreaseInline}
+                  aria-label="Decrease inline level"
+                  className="h-5 w-5 sm:h-5 sm:w-5 min-w-0 p-0"
+                >
+                  <MinusIcon className="size-3" />
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  isIconOnly
+                  isDisabled={!inlineInfo.canInlineMore}
+                  onPress={handleIncreaseInline}
+                  aria-label="Increase inline level"
+                  className="h-5 w-5 sm:h-5 sm:w-5 min-w-0 p-0"
+                >
+                  <PlusIcon className="size-3" />
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  isDisabled={inlineLevel !== "max" && !inlineInfo.canInlineMore}
+                  onPress={handleToggleMaxInline}
+                  aria-pressed={inlineLevel === "max"}
+                  className={`h-5 sm:h-5 px-1.5 text-[11px] font-medium ${
+                    inlineLevel === "max" ? "bg-gray-200 text-gray-900 hover:bg-gray-200" : ""
+                  }`}
+                >
+                  Max
+                </Button>
+              </ButtonGroup>
+            </div>
+          )}
+          <MenuTrigger>
+            <MenuButton onPress={() => setOpen((prev) => !prev)} noIndicator variant="plain" isIconOnly>
+              <AccessibleIcon aria-label="Open setting menu">
+                <CogIcon className="size-6" />
+              </AccessibleIcon>
+            </MenuButton>
+            <MenuPopover placement="bottom right" isOpen={isOpen} onOpenChange={setOpen}>
+              <Menu>
+                <MenuItem onAction={handleToggleShowText} className="cursor-pointer">
+                  <AccessibleIcon>
+                    <CodeBracketIcon />
+                  </AccessibleIcon>
+                  <MenuItemLabel>Text view</MenuItemLabel>
+                  <MenuItemDescription>
+                    {showText ? "Hide synchronized BNF text view" : "Show synchronized BNF text view below graph"}
+                  </MenuItemDescription>
+                </MenuItem>
+                <MenuItem onAction={handleToggleTextSyntax} className="cursor-pointer">
+                  <AccessibleIcon>
+                    <CodeBracketIcon />
+                  </AccessibleIcon>
+                  <MenuItemLabel>Syntax: {textSyntax === "sexpr" ? "S-expr" : "Call"}</MenuItemLabel>
+                  <MenuItemDescription>
+                    {textSyntax === "sexpr" ? "(op a b) · switch to Call op(a, b)" : "op(a, b) · switch to S-expr (op a b)"}
+                  </MenuItemDescription>
+                </MenuItem>
+                <MenuSeparator />
+                <MenuItem onAction={handleToggleInteractiveLayout} className="cursor-pointer">
+                  <AccessibleIcon>{useInteractiveLayout ? <ArrowUturnRightIcon /> : <ArrowLongRightIcon />}</AccessibleIcon>
+                  <MenuItemLabel>Interactive layout</MenuItemLabel>
+                  <MenuItemDescription>
+                    {useInteractiveLayout ? "Layout independently of previous positions" : "Layout interactively based on previous positions"}
+                  </MenuItemDescription>
+                </MenuItem>
+                <MenuItem onAction={handleToggleMergeEdges} className="cursor-pointer">
+                  <AccessibleIcon>{mergeEdges ? <ChevronRightIcon /> : <Bars2Icon />}</AccessibleIcon>
+                  <MenuItemLabel>Merge edges</MenuItemLabel>
+                  <MenuItemDescription>{mergeEdges ? "Seperate ports for incoming edges" : "Merge all incoming edges"}</MenuItemDescription>
+                </MenuItem>
+                <MenuSeparator />
+                <MenuItem onAction={handleCopyText} className="cursor-pointer">
+                  <AccessibleIcon>
+                    <ClipboardDocumentListIcon />
+                  </AccessibleIcon>
+                  <MenuItemLabel>Copy text</MenuItemLabel>
+                  <MenuItemDescription>
+                    {textClipboard.copied
+                      ? "Copied BNF text to clipboard"
+                      : textClipboard.error
+                      ? `Failed to copy text to clipboard ${textClipboard.error.message}`
+                      : "Copy BNF text to clipboard"}
+                  </MenuItemDescription>
+                </MenuItem>
+                <MenuItem onAction={handleCopyJson} className="cursor-pointer">
+                  <AccessibleIcon>
+                    <ClipboardDocumentListIcon />
+                  </AccessibleIcon>
+                  <MenuItemLabel>Copy JSON</MenuItemLabel>
+                  <MenuItemDescription>
+                    {jsonClipboard.copied
+                      ? "Copied e-graph JSON to clipboard"
+                      : jsonClipboard.error
+                      ? `Failed to copy e-graph JSON to clipboard ${jsonClipboard.error.message}`
+                      : "Copy e-graph JSON to clipboard"}
+                  </MenuItemDescription>
+                </MenuItem>
+                <MenuItem onAction={handleCopyElk} className="cursor-pointer">
+                  <AccessibleIcon>
+                    <ClipboardDocumentListIcon />
+                  </AccessibleIcon>
+                  <MenuItemLabel>Copy ELK</MenuItemLabel>
+                  <MenuItemDescription>
+                    {elkClipboard.copied
+                      ? "Copied ELK JSON to clipboard"
+                      : elkClipboard.error
+                      ? `Failed to copy ELK JSON to clipboard ${elkClipboard.error.message}`
+                      : "Copy ELK JSON to clipboard"}
+                  </MenuItemDescription>
+                </MenuItem>
+              </Menu>
+            </MenuPopover>
+          </MenuTrigger>
+        </div>
       </Panel>
 
       {/* <Background /> */}
@@ -455,6 +527,8 @@ function LayoutFlow({
   setShowText,
   textSyntax,
   setTextSyntax,
+  inlineLevel,
+  setInlineLevel,
 }: {
   egraph: string;
   outerElem: HTMLDivElement;
@@ -466,6 +540,8 @@ function LayoutFlow({
   setShowText: (value: boolean) => void;
   textSyntax: TextSyntax;
   setTextSyntax: (value: TextSyntax) => void;
+  inlineLevel: InlineLevel;
+  setInlineLevel: (value: InlineLevel) => void;
 }) {
   const [useInteractiveLayout, setUseInteractiveLayout] = useState(false);
   const [mergeEdges, setMergeEdges] = useState(false);
@@ -578,11 +654,35 @@ function LayoutFlow({
     [extraMeasure]
   );
   const previousLayout = useInteractiveLayout ? previousLayoutRef.current : null;
+  const effectiveInlineSyntax: TextSyntax = inlineLevel === 0 ? "call" : textSyntax;
   const layoutQuery = useQuery({
-    queryKey: ["layout", egraph, getNodeSize, getExtraSize, aspectRatio, selectedNodes, previousLayout, mergeEdges],
+    queryKey: [
+      "layout",
+      egraph,
+      getNodeSize,
+      getExtraSize,
+      aspectRatio,
+      selectedNodes,
+      previousLayout,
+      mergeEdges,
+      inlineLevel,
+      effectiveInlineSyntax,
+    ],
     enabled: Boolean(extraMeasure),
     networkMode: "always",
-    queryFn: ({ signal }) => layoutGraph(egraph, getNodeSize, getExtraSize, aspectRatio, selectedNodes, previousLayout, mergeEdges, signal),
+    queryFn: ({ signal }) =>
+      layoutGraph(
+        egraph,
+        getNodeSize,
+        getExtraSize,
+        aspectRatio,
+        selectedNodes,
+        previousLayout,
+        mergeEdges,
+        inlineLevel,
+        effectiveInlineSyntax,
+        signal
+      ),
     staleTime: Infinity,
     retry: false,
     retryOnMount: false,
@@ -714,7 +814,7 @@ function LayoutFlow({
     return <Loading />;
   }
 
-  const { nodes, edges, elkJSON, nodeToEdges, edgeToNodes, subgraph } = layoutQuery.data;
+  const { nodes, edges, elkJSON, nodeToEdges, edgeToNodes, subgraph, inlineInfo } = layoutQuery.data;
 
   return (
     <div ref={splitContainerRef} className="flex flex-col h-full w-full">
@@ -741,6 +841,9 @@ function LayoutFlow({
               setShowText={setShowText}
               textSyntax={textSyntax}
               setTextSyntax={setTextSyntax}
+              inlineLevel={inlineLevel}
+              setInlineLevel={setInlineLevel}
+              inlineInfo={inlineInfo}
             />
           </ReactFlowProvider>
         </SetSelectedNodeContext.Provider>
@@ -827,6 +930,7 @@ function SelectSider({ length, onSelect, selected }: { length: number; onSelect:
 export type MountOptions = {
   showText?: boolean;
   textSyntax?: TextSyntax;
+  inlineLevel?: InlineLevel;
 };
 
 export function Visualizer({
@@ -835,12 +939,14 @@ export function Visualizer({
   resize = false,
   showText: initialShowText = false,
   textSyntax: initialTextSyntax = "call",
+  inlineLevel: initialInlineLevel = 0,
 }: {
   egraphs: string[];
   height?: string | null;
   resize?: boolean;
   showText?: boolean;
   textSyntax?: TextSyntax;
+  inlineLevel?: InlineLevel;
 }) {
   const [rootElem, setRootElem] = useState<HTMLDivElement | null>(null);
 
@@ -849,6 +955,7 @@ export function Visualizer({
   const [extraElem, setExtraElem] = useState<HTMLDivElement | null>(null);
   const [showText, setShowText] = useState(initialShowText);
   const [textSyntax, setTextSyntax] = useState<TextSyntax>(initialTextSyntax);
+  const [inlineLevel, setInlineLevel] = useState<InlineLevel>(initialInlineLevel);
   const aspectRatio = rootElem ? rootElem.clientWidth / rootElem.clientHeight : null;
 
   useEffect(() => {
@@ -858,6 +965,10 @@ export function Visualizer({
   useEffect(() => {
     setTextSyntax(initialTextSyntax);
   }, [initialTextSyntax]);
+
+  useEffect(() => {
+    setInlineLevel(initialInlineLevel);
+  }, [initialInlineLevel]);
 
   // If we are at null, then use the last item in the list
   // if the last selection was for a list of egraphs that no longer exists, then use the last item in the list
@@ -890,6 +1001,8 @@ export function Visualizer({
           setShowText={setShowText}
           textSyntax={textSyntax}
           setTextSyntax={setTextSyntax}
+          inlineLevel={inlineLevel}
+          setInlineLevel={setInlineLevel}
         />
       )}
     </div>
@@ -916,6 +1029,7 @@ export function render({ model, el }: { el: HTMLElement; model: AnyModel }) {
         egraphs={model.get("egraphs")}
         showText={model.get("show_text")}
         textSyntax={model.get("text_syntax")}
+        inlineLevel={model.get("inline_level")}
         height="600px"
         resize
       />
@@ -941,7 +1055,12 @@ export function mount(
     const merged = { ...options, ...renderOptions };
     root.render(
       <QueryClientProvider client={queryClient}>
-        <Visualizer egraphs={egraphs} showText={merged.showText} textSyntax={merged.textSyntax} />
+        <Visualizer
+          egraphs={egraphs}
+          showText={merged.showText}
+          textSyntax={merged.textSyntax}
+          inlineLevel={merged.inlineLevel}
+        />
       </QueryClientProvider>
     );
   }
