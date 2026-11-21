@@ -32,7 +32,8 @@ import {
 
 import "@xyflow/react/dist/style.css";
 import { AnyModel } from "@anywidget/types";
-import { createRoot } from "react-dom/client";
+import { flushSync } from "react-dom";
+import { createRoot, Root } from "react-dom/client";
 import { AccessibleIcon } from "./react-aria-components-tailwind-starter/src/accessible-icon";
 import {
   Menu,
@@ -51,28 +52,33 @@ import { queryClient } from "./queryClient";
 import { Loading } from "./Loading";
 import { Slider, SliderOutput, SliderTack } from "./react-aria-components-tailwind-starter/src/slider";
 
-export function EClassNode({ data, selected }: NodeProps<FlowClass>) {
-  // Create one div per extra node
-  const extra_nodes = Object.entries(data.extra || {}).map(([key, value]) => (
-    <div
-      key={key}
-      className="truncate"
-      title={`${key}: ${value}`}
-      style={{ fontSize: 6 }}
-    >
-      {key != "" && <span className="pr-1 font-bold">{key}</span>}
-      <span>{value}</span>
+function EClassExtra({ extra }: { extra?: { [key: string]: string } }) {
+  const entries = Object.entries(extra || {});
+  if (entries.length === 0) {
+    return null;
+  }
+  return (
+    <div className="p-1 font-mono">
+      {entries.map(([key, value]) => (
+        <div key={key} className="truncate" title={`${key}: ${value}`} style={{ fontSize: 6 }}>
+          {key != "" && <span className="pr-1 font-bold">{key}</span>}
+          <span>{value}</span>
+        </div>
+      ))}
     </div>
-  ));
+  );
+}
+
+export function EClassNode({ data, selected }: NodeProps<FlowClass>) {
   const border = data.selected ? "border-indigo-600" : "border-black";
   return (
-      <div
-        className={`rounded-md border-dotted ${border} h-full w-full ${selected ? "border-2" : "border"}`}
-        style={{ backgroundColor: data.color! || "white" }}
-        title={data.id}
-      >
-        {extra_nodes.length > 0 && <div className="p-1 font-mono">{...extra_nodes}</div>}
-        <MyNodeToolbar type="class" id={data.id} selected={data.selected} />
+    <div
+      className={`rounded-md border-dotted ${border} h-full w-full ${selected ? "border-2" : "border"}`}
+      style={{ backgroundColor: data.color! || "white" }}
+      title={data.id}
+    >
+      <EClassExtra extra={data.extra} />
+      <MyNodeToolbar type="class" id={data.id} selected={data.selected} />
       <Handle type="target" position={Position.Top} className="invisible" />
       <Handle type="source" position={Position.Bottom} className="invisible" />
     </div>
@@ -400,6 +406,20 @@ function LayoutFlow({
     [setSelectedNodesWithEGraph, firstEgraph]
   );
 
+  const [extraMeasure, setExtraMeasure] = useState<{ container: HTMLDivElement; root: Root } | null>(null);
+  useEffect(() => {
+    const container = document.createElement("div");
+    container.className = "w-max max-w-96";
+    extraElem.replaceChildren(container);
+    const root = createRoot(container);
+    setExtraMeasure({ container, root });
+    return () => {
+      setExtraMeasure(null);
+      container.remove();
+      queueMicrotask(() => root.unmount());
+    };
+  }, [extraElem]);
+
   const getNodeSize = useCallback(
     (contents: string) => {
       innerElem.innerText = contents;
@@ -409,36 +429,20 @@ function LayoutFlow({
   );
   const getExtraSize = useCallback(
     (extra: { [key: string]: string }) => {
-      const entries = Object.entries(extra);
-      if (entries.length === 0) {
+      if (!extraMeasure || Object.keys(extra).length === 0) {
         return { width: 0, height: 0 };
       }
-      const rows = entries.map(([key, value]) => {
-        const row = document.createElement("div");
-        row.className = "truncate";
-        row.title = `${key}: ${value}`;
-        row.style.fontSize = "6px";
-        if (key !== "") {
-          const keySpan = document.createElement("span");
-          keySpan.className = "pr-1 font-bold";
-          keySpan.textContent = key;
-          row.appendChild(keySpan);
-        }
-        const valSpan = document.createElement("span");
-        valSpan.textContent = String(value);
-        row.appendChild(valSpan);
-        return row;
+      flushSync(() => {
+        extraMeasure.root.render(<EClassExtra extra={extra} />);
       });
-      extraElem.replaceChildren(...rows);
-      const { width, height } = extraElem.getBoundingClientRect();
-      extraElem.replaceChildren();
-      return { width, height };
+      return extraMeasure.container.getBoundingClientRect();
     },
-    [extraElem]
+    [extraMeasure]
   );
   const previousLayout = useInteractiveLayout ? previousLayoutRef.current : null;
   const layoutQuery = useQuery({
     queryKey: ["layout", egraph, getNodeSize, getExtraSize, aspectRatio, selectedNodes, previousLayout, mergeEdges],
+    enabled: Boolean(extraMeasure),
     networkMode: "always",
     queryFn: ({ signal }) => layoutGraph(egraph, getNodeSize, getExtraSize, aspectRatio, selectedNodes, previousLayout, mergeEdges, signal),
     staleTime: Infinity,
@@ -539,7 +543,7 @@ export function Visualizer({ egraphs, height = null, resize = false }: { egraphs
       {/* Hidden elements to measure node and extra class_data sizes */}
       <div className="invisible absolute">
         <ENode outerRef={setOuterElem} innerRef={setInnerElem} />
-        <div className="p-1 font-mono w-max max-w-96" ref={setExtraElem} />
+        <div ref={setExtraElem} />
       </div>
       <SelectSider length={egraphs.length} onSelect={onSelect} selected={actualSelected} />
       {outerElem && innerElem && extraElem && aspectRatio && (

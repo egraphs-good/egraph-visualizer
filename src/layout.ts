@@ -169,6 +169,8 @@ export async function layoutGraph(
   elkJSON: string;
   layout: PreviousLayout;
 }> {
+  // Yield past React's commit/effect phase so getExtraSize can call flushSync safely.
+  await Promise.resolve();
   const parsedEGraph = JSON.parse(egraph);
   const { elkNode, colors } = toELKNode(parsedEGraph, getNodeSize, getExtraSize, selectedNodes, aspectRatio, previousLayout, mergeEdges);
   const elkJSON = JSON.stringify(elkNode, null, 2);
