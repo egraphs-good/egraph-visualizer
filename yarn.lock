@@ -3400,6 +3400,7 @@ __metadata:
     eslint-plugin-react-hooks: "npm:^5.1.0-rc-fb9a90fa48-20240614"
     eslint-plugin-react-refresh: "npm:^0.4.12"
     globals: "npm:^15.11.0"
+    libavoid-js: "npm:0.4.5"
     monaco-editor: "npm:0.52.0"
     postcss: "npm:8.4.47"
     react: "npm:18.3.1"
@@ -4228,6 +4229,13 @@ __metadata:
     prelude-ls: "npm:^1.2.1"
     type-check: "npm:~0.4.0"
   checksum: 10c0/effb03cad7c89dfa5bd4f6989364bfc79994c2042ec5966cb9b95990e2edee5cd8969ddf42616a0373ac49fac1403437deaf6e9050fbbaa3546093a59b9ac94e
+  languageName: node
+  linkType: hard
+
+"libavoid-js@npm:0.4.5":
+  version: 0.4.5
+  resolution: "libavoid-js@npm:0.4.5"
+  checksum: 10c0/70efa439bea5711d55cc2a42a3d87e74af9d0ea79fc77dd851d3262e66398a2a6b1ebfa94c4f4bbe0ac6d9db05892f5cae318097c92296f132c5cde61e84f8cf
   languageName: node
   linkType: hard
 

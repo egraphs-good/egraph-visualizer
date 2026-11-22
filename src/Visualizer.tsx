@@ -210,6 +210,8 @@ function Rendering({
   setUseInteractiveLayout,
   mergeEdges,
   setMergeEdges,
+  avoidEdgeRouting,
+  setAvoidEdgeRouting,
   showText,
   setShowText,
   textSyntax,
@@ -232,6 +234,8 @@ function Rendering({
   setUseInteractiveLayout: (value: boolean) => void;
   mergeEdges: boolean;
   setMergeEdges: (value: boolean) => void;
+  avoidEdgeRouting: boolean;
+  setAvoidEdgeRouting: (value: boolean) => void;
   showText: boolean;
   setShowText: (value: boolean) => void;
   textSyntax: TextSyntax;
@@ -338,6 +342,10 @@ function Rendering({
     [setUseInteractiveLayout, useInteractiveLayout]
   );
   const handleToggleMergeEdges = useCallback(() => setMergeEdges(!mergeEdges), [setMergeEdges, mergeEdges]);
+  const handleToggleAvoidEdgeRouting = useCallback(
+    () => setAvoidEdgeRouting(!avoidEdgeRouting),
+    [setAvoidEdgeRouting, avoidEdgeRouting]
+  );
   const handleCopyText = useCallback(
     () => textClipboard.copy(blocksToPlainText(formatEGraphBlocks(subgraph, textSyntax))),
     [subgraph, textSyntax, textClipboard]
@@ -463,6 +471,13 @@ function Rendering({
                   <MenuItemLabel>Merge edges</MenuItemLabel>
                   <MenuItemDescription>{mergeEdges ? "Seperate ports for incoming edges" : "Merge all incoming edges"}</MenuItemDescription>
                 </MenuItem>
+                <MenuItem onAction={handleToggleAvoidEdgeRouting} className="cursor-pointer">
+                  <AccessibleIcon>{avoidEdgeRouting ? <ArrowUturnRightIcon /> : <ArrowLongRightIcon />}</AccessibleIcon>
+                  <MenuItemLabel>Edge routing: {avoidEdgeRouting ? "libavoid" : "ELK"}</MenuItemLabel>
+                  <MenuItemDescription>
+                    {avoidEdgeRouting ? "Switch to ELK layered edge routing" : "Route edges with libavoid to reduce crossings"}
+                  </MenuItemDescription>
+                </MenuItem>
                 <MenuSeparator />
                 <MenuItem onAction={handleCopyText} className="cursor-pointer">
                   <AccessibleIcon>
@@ -529,6 +544,8 @@ function LayoutFlow({
   setTextSyntax,
   inlineLevel,
   setInlineLevel,
+  avoidEdgeRouting,
+  setAvoidEdgeRouting,
 }: {
   egraph: string;
   outerElem: HTMLDivElement;
@@ -542,6 +559,8 @@ function LayoutFlow({
   setTextSyntax: (value: TextSyntax) => void;
   inlineLevel: InlineLevel;
   setInlineLevel: (value: InlineLevel) => void;
+  avoidEdgeRouting: boolean;
+  setAvoidEdgeRouting: (value: boolean) => void;
 }) {
   const [useInteractiveLayout, setUseInteractiveLayout] = useState(false);
   const [mergeEdges, setMergeEdges] = useState(false);
@@ -665,6 +684,7 @@ function LayoutFlow({
       selectedNodes,
       previousLayout,
       mergeEdges,
+      avoidEdgeRouting,
       inlineLevel,
       effectiveInlineSyntax,
     ],
@@ -679,6 +699,7 @@ function LayoutFlow({
         selectedNodes,
         previousLayout,
         mergeEdges,
+        avoidEdgeRouting,
         inlineLevel,
         effectiveInlineSyntax,
         signal
@@ -837,6 +858,8 @@ function LayoutFlow({
               setUseInteractiveLayout={setUseInteractiveLayout}
               mergeEdges={mergeEdges}
               setMergeEdges={setMergeEdges}
+              avoidEdgeRouting={avoidEdgeRouting}
+              setAvoidEdgeRouting={setAvoidEdgeRouting}
               showText={showText}
               setShowText={setShowText}
               textSyntax={textSyntax}
@@ -931,6 +954,7 @@ export type MountOptions = {
   showText?: boolean;
   textSyntax?: TextSyntax;
   inlineLevel?: InlineLevel;
+  avoidEdgeRouting?: boolean;
 };
 
 export function Visualizer({
@@ -940,6 +964,7 @@ export function Visualizer({
   showText: initialShowText = false,
   textSyntax: initialTextSyntax = "call",
   inlineLevel: initialInlineLevel = 0,
+  avoidEdgeRouting: initialAvoidEdgeRouting = true,
 }: {
   egraphs: string[];
   height?: string | null;
@@ -947,6 +972,7 @@ export function Visualizer({
   showText?: boolean;
   textSyntax?: TextSyntax;
   inlineLevel?: InlineLevel;
+  avoidEdgeRouting?: boolean;
 }) {
   const [rootElem, setRootElem] = useState<HTMLDivElement | null>(null);
 
@@ -956,6 +982,7 @@ export function Visualizer({
   const [showText, setShowText] = useState(initialShowText);
   const [textSyntax, setTextSyntax] = useState<TextSyntax>(initialTextSyntax);
   const [inlineLevel, setInlineLevel] = useState<InlineLevel>(initialInlineLevel);
+  const [avoidEdgeRouting, setAvoidEdgeRouting] = useState(initialAvoidEdgeRouting);
   const aspectRatio = rootElem ? rootElem.clientWidth / rootElem.clientHeight : null;
 
   useEffect(() => {
@@ -969,6 +996,10 @@ export function Visualizer({
   useEffect(() => {
     setInlineLevel(initialInlineLevel);
   }, [initialInlineLevel]);
+
+  useEffect(() => {
+    setAvoidEdgeRouting(initialAvoidEdgeRouting);
+  }, [initialAvoidEdgeRouting]);
 
   // If we are at null, then use the last item in the list
   // if the last selection was for a list of egraphs that no longer exists, then use the last item in the list
@@ -1003,6 +1034,8 @@ export function Visualizer({
           setTextSyntax={setTextSyntax}
           inlineLevel={inlineLevel}
           setInlineLevel={setInlineLevel}
+          avoidEdgeRouting={avoidEdgeRouting}
+          setAvoidEdgeRouting={setAvoidEdgeRouting}
         />
       )}
     </div>
@@ -1060,6 +1093,7 @@ export function mount(
           showText={merged.showText}
           textSyntax={merged.textSyntax}
           inlineLevel={merged.inlineLevel}
+          avoidEdgeRouting={merged.avoidEdgeRouting}
         />
       </QueryClientProvider>
     );
