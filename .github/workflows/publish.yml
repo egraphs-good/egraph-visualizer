@@ -10,6 +10,9 @@ on:
 jobs:
   build-and-publish:
     runs-on: ubuntu-latest
+    concurrency:
+      group: github-pages-deploy
+      cancel-in-progress: false
     permissions:
       contents: write
       pages: write
@@ -34,13 +37,46 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/')
         with:
           files: package.tgz
+      - name: Update gh-pages root (preserving PR previews)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          AUTH_HEADER="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 -w0)"
+          REPO_URL="https://github.com/${GITHUB_REPOSITORY}.git"
+          GHPAGES_DIR="/tmp/gh-pages"
+          STAGE_DIR="/tmp/pages-artifact"
+          rm -rf "$GHPAGES_DIR" "$STAGE_DIR"
+
+          if git -c "http.https://github.com/.extraheader=$AUTH_HEADER" ls-remote --exit-code --heads "$REPO_URL" gh-pages >/dev/null 2>&1; then
+            git -c "http.https://github.com/.extraheader=$AUTH_HEADER" clone --branch gh-pages --depth 1 "$REPO_URL" "$GHPAGES_DIR"
+          else
+            mkdir -p "$GHPAGES_DIR"
+            git -C "$GHPAGES_DIR" init -b gh-pages
+            git -C "$GHPAGES_DIR" remote add origin "$REPO_URL"
+          fi
+
+          find "$GHPAGES_DIR" -mindepth 1 -maxdepth 1 ! -name '.git' ! -name 'pr-preview' -exec rm -rf {} +
+          cp -a ./dist/. "$GHPAGES_DIR/"
+          touch "$GHPAGES_DIR/.nojekyll"
+
+          cd "$GHPAGES_DIR"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout --orphan gh-pages-tmp
+          git add -A
+          git commit -m "Deploy demo from ${GITHUB_REF_NAME} (${GITHUB_SHA:0:7})"
+          git branch -M gh-pages-tmp gh-pages
+          git -c "http.https://github.com/.extraheader=$AUTH_HEADER" push --force origin gh-pages
+
+          mkdir -p "$STAGE_DIR"
+          rsync -a --exclude='.git' "$GHPAGES_DIR/" "$STAGE_DIR/"
       - name: Setup Pages
         uses: actions/configure-pages@v4
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          # Upload dist folder
-          path: "./dist"
+          path: /tmp/pages-artifact
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
