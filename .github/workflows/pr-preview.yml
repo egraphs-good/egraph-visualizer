@@ -1,0 +1,235 @@
+name: Deploy PR Demo Preview
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, closed]
+
+jobs:
+  lint:
+    if: github.event.action != 'closed'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: corepack enable
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.x"
+          cache: "yarn"
+      - run: yarn install
+      - run: yarn lint
+
+  deploy-preview:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    concurrency:
+      group: github-pages-deploy
+      cancel-in-progress: false
+    permissions:
+      contents: write
+      pages: write
+      id-token: write
+      pull-requests: write
+    environment:
+      name: github-pages
+      url: ${{ steps.preview.outputs.url }}
+    steps:
+      - name: Setup Pages
+        id: pages
+        uses: actions/configure-pages@v4
+
+      - name: Compute preview metadata
+        id: preview
+        env:
+          BASE_URL: ${{ steps.pages.outputs.base_url }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          EVENT_ACTION: ${{ github.event.action }}
+        run: |
+          set -euo pipefail
+          CLEAN_BASE="${BASE_URL%/}"
+          if [ "$EVENT_ACTION" = "closed" ]; then
+            echo "url=${CLEAN_BASE}/" >> "$GITHUB_OUTPUT"
+          else
+            echo "url=${CLEAN_BASE}/pr-preview/pr-${PR_NUMBER}/" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Fetch gh-pages branch
+        id: fetch-pages
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          AUTH_HEADER="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 -w0)"
+          REPO_URL="https://github.com/${GITHUB_REPOSITORY}.git"
+          GHPAGES_DIR="/tmp/gh-pages"
+          rm -rf "$GHPAGES_DIR"
+
+          if git -c "http.https://github.com/.extraheader=$AUTH_HEADER" ls-remote --exit-code --heads "$REPO_URL" gh-pages >/dev/null 2>&1; then
+            git -c "http.https://github.com/.extraheader=$AUTH_HEADER" clone --branch gh-pages --depth 1 "$REPO_URL" "$GHPAGES_DIR"
+          else
+            mkdir -p "$GHPAGES_DIR"
+            git -C "$GHPAGES_DIR" init -b gh-pages
+            git -C "$GHPAGES_DIR" remote add origin "$REPO_URL"
+          fi
+
+          if [ -f "$GHPAGES_DIR/index.html" ]; then
+            echo "needs_root_seed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "needs_root_seed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+          if [ -d "$GHPAGES_DIR/pr-preview/pr-${PR_NUMBER}" ]; then
+            echo "preview_exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "preview_exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout PR
+        if: github.event.action != 'closed'
+        uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Enable Corepack
+        if: github.event.action != 'closed'
+        run: corepack enable
+
+      - name: Setup Node.js
+        if: github.event.action != 'closed'
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22.x"
+          cache: "yarn"
+
+      - name: Install and build PR demo
+        if: github.event.action != 'closed'
+        run: |
+          set -euo pipefail
+          yarn install
+          yarn build
+          rm -rf /tmp/pr-dist
+          cp -a ./dist /tmp/pr-dist
+
+      - name: Checkout main to seed root site (first run only)
+        if: github.event.action != 'closed' && steps.fetch-pages.outputs.needs_root_seed == 'true'
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          path: _main_seed
+          submodules: true
+
+      - name: Build main to seed root site (first run only)
+        if: github.event.action != 'closed' && steps.fetch-pages.outputs.needs_root_seed == 'true'
+        working-directory: _main_seed
+        run: |
+          set -euo pipefail
+          yarn install
+          yarn build
+          cp -a ./dist/. /tmp/gh-pages/
+
+      - name: Update gh-pages branch
+        id: update-pages
+        if: github.event.action != 'closed' || steps.fetch-pages.outputs.preview_exists == 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          EVENT_ACTION: ${{ github.event.action }}
+        run: |
+          set -euo pipefail
+          AUTH_HEADER="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 -w0)"
+          GHPAGES_DIR="/tmp/gh-pages"
+          STAGE_DIR="/tmp/pages-artifact"
+          PREVIEW_DIR="$GHPAGES_DIR/pr-preview/pr-${PR_NUMBER}"
+
+          if [ "$EVENT_ACTION" = "closed" ]; then
+            rm -rf "$PREVIEW_DIR"
+            COMMIT_MSG="Remove demo preview for PR #${PR_NUMBER}"
+          else
+            rm -rf "$PREVIEW_DIR"
+            mkdir -p "$PREVIEW_DIR"
+            cp -a /tmp/pr-dist/. "$PREVIEW_DIR/"
+            COMMIT_MSG="Deploy demo preview for PR #${PR_NUMBER} (${HEAD_SHA:0:7})"
+          fi
+          touch "$GHPAGES_DIR/.nojekyll"
+
+          cd "$GHPAGES_DIR"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout --orphan gh-pages-tmp
+          git add -A
+          git commit -m "$COMMIT_MSG"
+          git branch -M gh-pages-tmp gh-pages
+          git -c "http.https://github.com/.extraheader=$AUTH_HEADER" push --force origin gh-pages
+
+          rm -rf "$STAGE_DIR"
+          mkdir -p "$STAGE_DIR"
+          rsync -a --exclude='.git' "$GHPAGES_DIR/" "$STAGE_DIR/"
+          echo "deployed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Upload Pages artifact
+        if: steps.update-pages.outputs.deployed == 'true'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: /tmp/pages-artifact
+
+      - name: Deploy to GitHub Pages
+        if: steps.update-pages.outputs.deployed == 'true'
+        id: deployment
+        uses: actions/deploy-pages@v4
+
+      - name: Comment preview URL on PR
+        if: steps.update-pages.outputs.deployed == 'true'
+        uses: actions/github-script@v7
+        env:
+          PREVIEW_URL: ${{ steps.preview.outputs.url }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          EVENT_ACTION: ${{ github.event.action }}
+        with:
+          script: |
+            const marker = "<!-- egraph-visualizer-pr-preview -->";
+            const { owner, repo } = context.repo;
+            const issue_number = context.issue.number;
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner,
+              repo,
+              issue_number,
+            });
+            const existing = comments.find((c) => c.body && c.body.includes(marker));
+
+            if (process.env.EVENT_ACTION === "closed") {
+              if (!existing) return;
+              const body = `${marker}\nDemo preview for this PR has been removed.`;
+              await github.rest.issues.updateComment({
+                owner,
+                repo,
+                comment_id: existing.id,
+                body,
+              });
+              return;
+            }
+
+            const shortSha = (process.env.HEAD_SHA || "").slice(0, 7);
+            const url = process.env.PREVIEW_URL;
+            const body = [
+              marker,
+              `Demo preview deployed for commit \`${shortSha}\`:`,
+              "",
+              url,
+            ].join("\n");
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner,
+                repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner,
+                repo,
+                issue_number,
+                body,
+              });
+            }
