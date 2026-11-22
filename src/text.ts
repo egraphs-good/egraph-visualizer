@@ -368,8 +368,9 @@ export function formatEGraphBlocks(
     return blocks;
   }
 
-  // Hash count counts outward from the class: `#` is a single class, `##` is the innermost group,
-  // `###` is the next enclosing group, etc. (monotonic regardless of nesting depth).
+  // Hash count counts outward from the class (nesting level from the class, not a fixed key
+  // identity): `#` is a single class, `##` is the innermost group, `###` is the next enclosing
+  // group, etc.
   const emitGroupLevel = (
     classes: EGraphClassID[],
     levelIdx: number,

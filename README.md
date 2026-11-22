@@ -66,6 +66,10 @@ It is also published as an NPM package, which can be imported and used in the br
 There is also a demo site published on Github Pages, which allows you to upload and edit a serialized e-graph and see
 the visualization.
 
+## Text View
+
+The synchronized text panel renders each e-class as `<id> ::= alt1 | alt2` and formats `class_data` entries as `# key: value` comments. When one or more non-`type` `class_data` keys are present on every displayed class with repeated values, the text view automatically groups classes by those keys in JSON key order using monotonic comment headers (`#` = one class, `##` = innermost group, `###` = outer group, etc.). Hash count indicates nesting level outward from the class, not a fixed key identity.
+
 _If other ways of packaging would be helpful, please open an issue._
 
 ## Development
