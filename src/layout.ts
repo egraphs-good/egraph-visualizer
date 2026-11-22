@@ -4,6 +4,8 @@ import ELK, { ElkExtendedEdge, ElkNode } from "elkjs/lib/elk-api";
 import { Node, Edge } from "@xyflow/react";
 // Make worker inline because if its external cannot be loaded from esm.sh due to CORS
 import ELKWorker from "elkjs/lib/elk-worker?worker&inline";
+import { InlineLevel, InlineResult, inlineLeaves } from "./inline";
+import { TextSyntax } from "./text";
 
 // Elk has a *huge* amount of options to configure. To see everything you can
 // tweak check out:
@@ -28,13 +30,10 @@ const rootLayoutOptions = {
 // the number of pixels of padding between nodes and between nodes and their parents
 const nodePadding = 5;
 
-/// amount of padding per extra class item
-const extra_padding = 8;
-function classLayoutOptions(n_extra: number) {
-  let top = nodePadding + n_extra * extra_padding;
-  if (n_extra > 0) {
-    top += 2;
-  }
+function classLayoutOptions(extraSize: { width: number; height: number }): Record<string, string> {
+  const hasExtra = extraSize.height > 0 || extraSize.width > 0;
+  const top = hasExtra ? Math.ceil(extraSize.height) + 4 : nodePadding;
+  const minWidth = hasExtra ? Math.ceil(extraSize.width) + 4 : 0;
   return {
     "elk.algorithm": "layered",
     "elk.direction": "DOWN",
@@ -42,6 +41,13 @@ function classLayoutOptions(n_extra: number) {
     "elk.spacing.nodeNode": nodePadding.toString(),
     "elk.padding": `[top=${top},left=${nodePadding},bottom=${nodePadding},right=${nodePadding}]`,
     "elk.spacing.portPort": "0",
+    ...(minWidth > 0
+      ? {
+          "elk.nodeSize.constraints": "MINIMUM_SIZE",
+          "elk.nodeSize.minimum": `(${minWidth}, 0)`,
+          "elk.contentAlignment": "H_CENTER V_TOP",
+        }
+      : {}),
     // allow ports on e-class to be anywhere
     // TODO: they only seem to appear on top side of nodes, figure out if there is a way to allow them
     // to be on all sides if it would result in a better layout
@@ -63,20 +69,23 @@ const nodeLayoutOptions = {
   portConstraints: "FIXED_ORDER",
 };
 
-type EGraphNodeID = string;
-type EGraphClassID = string;
-type EGraphNode = {
+// Matches the serialized JSON schema from egraph-serialize:
+// https://github.com/egraphs-good/egraph-serialize/blob/main/src/lib.rs
+export type EGraphNodeID = string;
+export type EGraphClassID = string;
+export type EGraphNode = {
   op: string;
   children?: EGraphNodeID[];
   eclass: EGraphClassID;
-  cost: number;
+  cost?: number;
   subsumed?: boolean;
 };
 
-type EGraphClassData = {
+export type EGraphClassData = {
   type?: string;
+  [key: string]: string | undefined;
 };
-type EGraph = {
+export type EGraph = {
   nodes: { [id: EGraphNodeID]: EGraphNode };
   root_eclasses?: EGraphClassID[];
   class_data?: { [id: EGraphClassID]: EGraphClassData };
@@ -144,6 +153,116 @@ export type PreviousLayout = { layout: MyELKNodeLayedOut; colors: Colors };
 export type SelectedNode = { type: "class" | "node"; id: string };
 export type SelectedNodes = SelectedNode[];
 
+export type FilteredEGraph = {
+  egraph: EGraph;
+  nodeToClass: Map<EGraphNodeID, EGraphClassID>;
+  classToNodes: Map<EGraphClassID, [EGraphNodeID, EGraphNode][]>;
+  hasActiveFilter: boolean;
+};
+
+/**
+ * Filter a serialized egraph-serialize `EGraph` down to the selected classes/nodes
+ * and their descendants, while retaining the full `nodeToClass` mapping so child
+ * references to pruned sibling nodes in restricted e-classes still resolve.
+ */
+export function filterEGraph(egraph: EGraph, selectedNodes: SelectedNodes): FilteredEGraph {
+  const nodeToClass = new Map<EGraphNodeID, EGraphClassID>();
+  const classToNodes = new Map<EGraphClassID, [EGraphNodeID, EGraphNode][]>();
+  for (const [id, node] of Object.entries(egraph.nodes)) {
+    nodeToClass.set(id, node.eclass);
+    let list = classToNodes.get(node.eclass);
+    if (!list) {
+      list = [];
+      classToNodes.set(node.eclass, list);
+    }
+    list.push([id, node]);
+  }
+
+  const validSelected = selectedNodes.filter((selected) =>
+    selected.type === "class" ? classToNodes.has(selected.id) : nodeToClass.has(selected.id)
+  );
+
+  if (validSelected.length > 0) {
+    const restricted = new Map<EGraphClassID, [EGraphNodeID, EGraphNode][]>();
+    const toTraverse = new Set<EGraphClassID>();
+    for (const selected of validSelected) {
+      if (selected.type === "class") {
+        toTraverse.add(selected.id);
+      } else {
+        const classID = nodeToClass.get(selected.id)!;
+        toTraverse.add(classID);
+        const entry: [EGraphNodeID, EGraphNode] = [selected.id, egraph.nodes[selected.id]];
+        const prev = restricted.get(classID);
+        if (prev) {
+          if (!prev.some(([existingID]) => existingID === selected.id)) {
+            prev.push(entry);
+          }
+        } else {
+          restricted.set(classID, [entry]);
+        }
+      }
+    }
+    for (const [classID, entries] of restricted.entries()) {
+      classToNodes.set(classID, entries);
+    }
+
+    const traversed = new Set<EGraphClassID>();
+    const queue = [...toTraverse];
+    while (queue.length > 0) {
+      const current = queue.shift()!;
+      if (traversed.has(current)) {
+        continue;
+      }
+      traversed.add(current);
+      for (const [, node] of classToNodes.get(current) || []) {
+        for (const childNode of node.children || []) {
+          const childClass = nodeToClass.get(childNode);
+          if (childClass !== undefined && !traversed.has(childClass)) {
+            queue.push(childClass);
+          }
+        }
+      }
+    }
+
+    for (const id of [...classToNodes.keys()]) {
+      if (!traversed.has(id)) {
+        classToNodes.delete(id);
+      }
+    }
+  }
+
+  const keptNodes: { [id: EGraphNodeID]: EGraphNode } = {};
+  for (const entries of classToNodes.values()) {
+    for (const [nodeID, node] of entries) {
+      keptNodes[nodeID] = node;
+    }
+  }
+
+  const keptClassData: { [id: EGraphClassID]: EGraphClassData } = {};
+  if (egraph.class_data) {
+    for (const classID of classToNodes.keys()) {
+      if (egraph.class_data[classID]) {
+        keptClassData[classID] = egraph.class_data[classID];
+      }
+    }
+  }
+
+  const filteredEGraph: EGraph = {
+    nodes: keptNodes,
+    ...(egraph.root_eclasses
+      ? { root_eclasses: egraph.root_eclasses.filter((id) => classToNodes.has(id)) }
+      : {}),
+    ...(egraph.class_data ? { class_data: keptClassData } : {}),
+  };
+
+  return {
+    egraph: filteredEGraph,
+    nodeToClass,
+    classToNodes,
+    hasActiveFilter: validSelected.length > 0,
+  };
+}
+
 /**
  * Transform a JSON egraph into the laid out nodes.
  *
@@ -152,10 +271,13 @@ export type SelectedNodes = SelectedNode[];
 export async function layoutGraph(
   egraph: string,
   getNodeSize: (contents: string) => { width: number; height: number },
+  getExtraSize: (extra: { [key: string]: string }) => { width: number; height: number },
   aspectRatio: number,
   selectedNodes: SelectedNodes,
   previousLayout: PreviousLayout | null,
   mergeEdges: boolean,
+  inlineLevel: InlineLevel,
+  inlineSyntax: TextSyntax,
   signal: AbortSignal
 ): Promise<{
   nodes: (FlowNode | FlowClass)[];
@@ -164,9 +286,31 @@ export async function layoutGraph(
   nodeToEdges: Map<string, string[]>;
   elkJSON: string;
   layout: PreviousLayout;
+  subgraph: FilteredEGraph;
+  inlineInfo: Omit<InlineResult, "egraph">;
 }> {
-  const parsedEGraph = JSON.parse(egraph);
-  const { elkNode, colors } = toELKNode(parsedEGraph, getNodeSize, selectedNodes, aspectRatio, previousLayout, mergeEdges);
+  // Yield past React's commit/effect phase so getExtraSize can call flushSync safely.
+  await Promise.resolve();
+  const parsedEGraph = JSON.parse(egraph) as EGraph;
+  const protectedClasses = new Set<EGraphClassID>();
+  for (const selected of selectedNodes) {
+    if (selected.type === "class") {
+      protectedClasses.add(selected.id);
+    } else {
+      const owningClass = parsedEGraph.nodes[selected.id]?.eclass;
+      if (owningClass !== undefined) {
+        protectedClasses.add(owningClass);
+      }
+    }
+  }
+  const { egraph: inlinedEGraph, appliedPasses, canInlineMore } = inlineLeaves(
+    parsedEGraph,
+    inlineLevel,
+    inlineSyntax,
+    protectedClasses
+  );
+  const subgraph = filterEGraph(inlinedEGraph, selectedNodes);
+  const { elkNode, colors } = toELKNode(subgraph, getNodeSize, getExtraSize, selectedNodes, aspectRatio, previousLayout, mergeEdges);
   const elkJSON = JSON.stringify(elkNode, null, 2);
   const layout = (await layoutWithCancel(elkNode, signal)) as MyELKNodeLayedOut;
   const edges = toFlowEdges(layout);
@@ -184,59 +328,23 @@ export async function layoutGraph(
     edges,
     edgeToNodes,
     nodeToEdges,
+    subgraph,
+    inlineInfo: { appliedPasses, canInlineMore },
   };
 }
 
 // We wil convert this to a graph where the id of the nodes are class-{class_id} and node-{node_id}
 // the ID of the edges will be edge-{source_id}-{port-index} and the ports will be port-{source_id}-{port-index}
 function toELKNode(
-  egraph: EGraph,
+  subgraph: FilteredEGraph,
   getNodeSize: (contents: string) => { width: number; height: number },
+  getExtraSize: (extra: { [key: string]: string }) => { width: number; height: number },
   selectedNodes: SelectedNodes,
   aspectRatio: number,
   previousLayout: PreviousLayout | null,
   mergeEdges: boolean
 ): { elkNode: MyELKNode; colors: Colors } {
-  const nodeToClass = new Map<EGraphNodeID, EGraphClassID>();
-  const classToNodes = new Map<EGraphClassID, [EGraphNodeID, EGraphNode][]>();
-  for (const [id, node] of Object.entries(egraph.nodes)) {
-    nodeToClass.set(id, node.eclass);
-    if (!classToNodes.has(node.eclass)) {
-      classToNodes.set(node.eclass, []);
-    }
-    classToNodes.get(node.eclass)!.push([id, node]);
-  }
-  /// filter out to descendants of the selected nodes
-  const toTraverse = new Set<string>();
-  for (const selectedNode of selectedNodes) {
-    if (selectedNode.type === "class") {
-      toTraverse.add(selectedNode.id);
-    } else {
-      const classID = nodeToClass.get(selectedNode.id)!;
-      toTraverse.add(classID);
-      // if we have selected a node, change the e-class to only include the selected node
-      classToNodes.set(classID, [[selectedNode.id, egraph.nodes[selectedNode.id]]]);
-    }
-  }
-  const traversed = new Set<string>();
-  while (toTraverse.size > 0) {
-    const current: string = toTraverse.values().next().value!;
-    toTraverse.delete(current);
-    traversed.add(current);
-    for (const childNode of classToNodes.get(current)!.flatMap(([, node]) => node.children || [])) {
-      const childClass = egraph.nodes[childNode].eclass;
-      if (!traversed.has(childClass)) {
-        toTraverse.add(childClass);
-      }
-    }
-  }
-  if (selectedNodes.length > 0) {
-    for (const id of classToNodes.keys()) {
-      if (!traversed.has(id)) {
-        classToNodes.delete(id);
-      }
-    }
-  }
+  const { egraph, nodeToClass, classToNodes } = subgraph;
 
   const incomingEdges = new Map<EGraphClassID, { nodeID: string; index: number }[]>();
   // use classToNodes instead of egraph.nodes since it's already filtered and we dont want to create
@@ -287,12 +395,18 @@ function toELKNode(
   elkRoot.layoutOptions!["elk.aspectRatio"] = aspectRatio as unknown as string;
   for (const [classID, nodes] of classToNodes.entries()) {
     const elkClassID = `class-${classID}`;
-    const extra = class_data[classID] ? Object.fromEntries(Object.entries(class_data[classID]!).filter(([key]) => key !== "type")) : {};
+    const extra = class_data[classID]
+      ? Object.fromEntries(
+          Object.entries(class_data[classID]!).filter(
+            (entry): entry is [string, string] => entry[0] !== "type" && entry[1] !== undefined
+          )
+        )
+      : {};
     const selected = selectedNodes.some((n) => n.type === "class" && n.id === classID);
     const elkClass: MyELKNode["children"][0] = {
       id: elkClassID,
       data: { color: colors.get(class_data[classID]?.type)!, id: classID, extra, selected },
-      layoutOptions: classLayoutOptions(Object.keys(extra).length),
+      layoutOptions: classLayoutOptions(getExtraSize(extra)),
       children: [],
       ports: mergeEdges
         ? []
