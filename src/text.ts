@@ -145,11 +145,15 @@ function formatNodeExpr(
   syntax: TextSyntax
 ): { expr: string; parts: TextExprPart[]; referencedClasses: EGraphClassID[] } {
   const childIDs = node.children || [];
-  const referencedClasses = childIDs.map((childID) => nodeToClass.get(childID) ?? childID);
-  const parts = buildOpParts(node.op, referencedClasses, syntax, (classID) => ({
-    kind: "classRef",
-    classID,
-  }));
+  const referencedClasses: EGraphClassID[] = [];
+  const parts = buildOpParts(node.op, childIDs, syntax, (childID) => {
+    const classID = nodeToClass.get(childID);
+    if (classID !== undefined) {
+      referencedClasses.push(classID);
+      return { kind: "classRef", classID };
+    }
+    return { kind: "text", value: `?${childID}` };
+  });
   return {
     expr: partsToText(parts),
     parts,

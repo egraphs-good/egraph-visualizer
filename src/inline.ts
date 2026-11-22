@@ -61,6 +61,53 @@ function formatCandidateTemplate(node: EGraphNode, syntax: TextSyntax): string {
   return formatOpArgs(node.op, placeholders, syntax);
 }
 
+/**
+ * True when `expr` contains whitespace outside matching brackets/quotes (e.g. `a + b` or `· + ·`),
+ * so splicing it raw into a `·` placeholder slot or S-expr argument would lose grouping/precedence.
+ */
+function hasTopLevelWhitespace(expr: string): boolean {
+  let depth = 0;
+  let quote: string | null = null;
+  for (let i = 0; i < expr.length; i++) {
+    const ch = expr[i];
+    if (quote !== null) {
+      if (ch === "\\" && i + 1 < expr.length) {
+        i += 1;
+      } else if (ch === quote) {
+        quote = null;
+      }
+      continue;
+    }
+    if (ch === "\"" || ch === "'") {
+      quote = ch;
+    } else if (ch === "(" || ch === "[" || ch === "{") {
+      depth += 1;
+    } else if (ch === ")" || ch === "]" || ch === "}") {
+      depth = Math.max(0, depth - 1);
+    } else if (depth === 0 && /\s/.test(ch)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function formatInlinedParentOp(
+  parentOp: string,
+  children: EGraphNodeID[],
+  resolveTemplate: (childID: EGraphNodeID) => string | undefined,
+  syntax: TextSyntax
+): string {
+  const wrapCompound = countPlaceholders(parentOp) > 0 || syntax === "sexpr";
+  const args = children.map((childID) => {
+    const tmpl = resolveTemplate(childID);
+    if (tmpl === undefined) {
+      return MISSING_ARG_VALUE;
+    }
+    return wrapCompound && hasTopLevelWhitespace(tmpl) ? `(${tmpl})` : tmpl;
+  });
+  return formatOpArgs(parentOp, args, syntax);
+}
+
 function analyzeInlinableSingletons(
   egraph: EGraph,
   syntax: TextSyntax,
@@ -179,8 +226,12 @@ function analyzeInlinableSingletons(
     if (touching.length === 0) {
       continue;
     }
-    const args = children.map((c) => (templateByID.has(c) ? templateByID.get(c)! : MISSING_ARG_VALUE));
-    const newOp = formatOpArgs(parentNode.op, args, syntax);
+    const newOp = formatInlinedParentOp(
+      parentNode.op,
+      children,
+      (c) => templateByID.get(c),
+      syntax
+    );
     if (newOp.length > MAX_INLINED_OP_LENGTH) {
       for (const c of touching) {
         blocked.add(c);
@@ -232,9 +283,6 @@ function inlineLeavesStep(
   for (const [parentID, inlinedIDs] of parentsToInlined.entries()) {
     const parent = nextNodes[parentID];
     const children = parent.children || [];
-    const args = children.map((childID) =>
-      inlinedIDs.has(childID) ? candidateTemplates.get(childID)! : MISSING_ARG_VALUE
-    );
 
     const hasExplicitCost =
       parent.cost !== undefined ||
@@ -248,10 +296,19 @@ function inlineLeavesStep(
     const nextWeight = (nodeWeights.get(parentID) ?? parent.cost ?? 1) + addedWeight;
     nodeWeights.set(parentID, nextWeight);
 
-    parent.op = formatOpArgs(parent.op, args, syntax);
+    parent.op = formatInlinedParentOp(
+      parent.op,
+      children,
+      (childID) => (inlinedIDs.has(childID) ? candidateTemplates.get(childID) : undefined),
+      syntax
+    );
     parent.children = children.flatMap((childID) =>
       inlinedIDs.has(childID) ? egraph.nodes[childID].children || [] : [childID]
     );
+    // Drop non-standard children-indexed fields (e.g. `child_roles`) once `children` is rewritten.
+    if ("child_roles" in parent) {
+      delete (parent as Record<string, unknown>).child_roles;
+    }
     if (hasExplicitCost) {
       parent.cost = nextWeight;
     }
