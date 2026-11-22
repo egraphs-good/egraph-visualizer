@@ -5,6 +5,7 @@ import { Node, Edge } from "@xyflow/react";
 // Make worker inline because if its external cannot be loaded from esm.sh due to CORS
 import ELKWorker from "elkjs/lib/elk-worker?worker&inline";
 import { InlineLevel, InlineResult, inlineLeaves } from "./inline";
+import { routeOuterEdgesWithCancel } from "./routing";
 import { TextSyntax } from "./text";
 
 // Elk has a *huge* amount of options to configure. To see everything you can
@@ -276,6 +277,7 @@ export async function layoutGraph(
   selectedNodes: SelectedNodes,
   previousLayout: PreviousLayout | null,
   mergeEdges: boolean,
+  avoidEdgeRouting: boolean,
   inlineLevel: InlineLevel,
   inlineSyntax: TextSyntax,
   signal: AbortSignal
@@ -313,7 +315,7 @@ export async function layoutGraph(
   const { elkNode, colors } = toELKNode(subgraph, getNodeSize, getExtraSize, selectedNodes, aspectRatio, previousLayout, mergeEdges);
   const elkJSON = JSON.stringify(elkNode, null, 2);
   const layout = (await layoutWithCancel(elkNode, signal)) as MyELKNodeLayedOut;
-  const edges = toFlowEdges(layout);
+  const edges = await toFlowEdges(layout, mergeEdges, avoidEdgeRouting, signal);
   const nodes = toFlowNodes(layout);
   const nodeToEdges = new Map(
     [...Object.entries(Object.groupBy(edges, (edge) => edge.source)), ...Object.entries(Object.groupBy(edges, (edge) => edge.target))].map(
@@ -576,9 +578,52 @@ function toFlowNodes(layout: MyELKNodeLayedOut): (FlowClass | FlowNode)[] {
   ]);
 }
 
-function toFlowEdges(layout: MyELKNodeLayedOut): FlowEdge[] {
+function joinInnerAndOuterPoints(
+  innerPoints: { x: number; y: number }[],
+  outerPoints: { x: number; y: number }[],
+  sourceNodeBounds?: { x: number; y: number; width: number; height: number }
+): { x: number; y: number }[] {
+  const innerEnd = innerPoints[innerPoints.length - 1];
+  const outerStart = outerPoints[0];
+  if (Math.hypot(innerEnd.x - outerStart.x, innerEnd.y - outerStart.y) < 0.5) {
+    return [...innerPoints, ...outerPoints.slice(1)];
+  }
+  // If inner edge is a straight vertical drop and libavoid nudged the border exit slightly
+  // horizontally within the source e-node's width, align the vertical drop so there is no jog.
+  if (
+    sourceNodeBounds &&
+    innerPoints.length === 2 &&
+    Math.abs(innerPoints[0].x - innerEnd.x) < 0.5 &&
+    Math.abs(innerEnd.y - outerStart.y) < 1 &&
+    outerStart.x >= sourceNodeBounds.x + 3 &&
+    outerStart.x <= sourceNodeBounds.x + sourceNodeBounds.width - 3
+  ) {
+    return [{ x: outerStart.x, y: innerPoints[0].y }, ...outerPoints];
+  }
+  return [...innerPoints, ...outerPoints];
+}
+
+async function toFlowEdges(
+  layout: MyELKNodeLayedOut,
+  mergeEdges: boolean,
+  avoidEdgeRouting: boolean,
+  signal: AbortSignal
+): Promise<FlowEdge[]> {
   const outerEdges = Object.fromEntries(layout.edges!.map(({ edgeID, sections }) => [edgeID, sections![0]]));
-  return layout.children.flatMap(({ x: parentX, y: parentY, edges }) =>
+  const classes = layout.children.map(({ id, x, y, width, height }) => ({ id, x, y, width, height }));
+  const nodeBounds = new Map<string, { x: number; y: number; width: number; height: number }>();
+  for (const cls of layout.children) {
+    for (const child of cls.children) {
+      nodeBounds.set(child.id, {
+        x: cls.x + child.x,
+        y: cls.y + child.y,
+        width: child.width,
+        height: child.height,
+      });
+    }
+  }
+
+  const edgeItems = layout.children.flatMap(({ id: sourceClassID, x: parentX, y: parentY, edges }) =>
     edges!.map(({ edgeID, sections, sourceNode, targetNode }) => {
       const [section] = sections!;
       const outerEdge = outerEdges[edgeID];
@@ -588,15 +633,52 @@ function toFlowEdges(layout: MyELKNodeLayedOut): FlowEdge[] {
         y: y + parentY,
       }));
       return {
-        type: "edge",
-        id: edgeID,
-        source: sourceNode,
-        target: targetNode!,
-        data: {
-          // Combien inner and outer edge show it just shows up once in the rendering and can be selected as a single unit.
-          points: [...innerPoints, ...(outerEdge.bendPoints || []), outerEdge.endPoint],
-        },
+        edgeID,
+        sourceNode,
+        sourceClassID,
+        targetNode: targetNode!,
+        innerPoints,
+        outerEdge,
       };
     })
   );
+
+  let routedOuter: Map<string, { x: number; y: number }[]> | null = null;
+  if (avoidEdgeRouting) {
+    try {
+      routedOuter = await routeOuterEdgesWithCancel(
+        classes,
+        edgeItems.map((item) => ({
+          edgeID: item.edgeID,
+          sourceClassID: item.sourceClassID,
+          targetClassID: item.targetNode,
+          sourcePoint: item.innerPoints[item.innerPoints.length - 1],
+          elkTargetPoint: item.outerEdge.endPoint,
+        })),
+        mergeEdges,
+        signal
+      );
+    } catch (err) {
+      if (signal.aborted) {
+        throw err;
+      }
+      // Fall back to ELK edge routes if WASM routing fails in an unusual host environment.
+      console.warn("libavoid edge routing failed, falling back to ELK routes:", err);
+    }
+  }
+
+  return edgeItems.map(({ edgeID, sourceNode, targetNode, innerPoints, outerEdge }) => {
+    const outerPoints = routedOuter?.get(edgeID);
+    const points =
+      outerPoints && outerPoints.length >= 2
+        ? joinInnerAndOuterPoints(innerPoints, outerPoints, nodeBounds.get(sourceNode))
+        : [...innerPoints, ...(outerEdge.bendPoints || []), outerEdge.endPoint];
+    return {
+      type: "edge",
+      id: edgeID,
+      source: sourceNode,
+      target: targetNode,
+      data: { points },
+    };
+  });
 }
