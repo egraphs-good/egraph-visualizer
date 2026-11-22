@@ -188,10 +188,23 @@ function ClassProduction({
   const blockHighlightClass = isClassHighlighted ? "bg-indigo-50/80 ring-1 ring-indigo-300 rounded" : "";
 
   return (
-    <div
-      ref={(el) => registerClassRef(block.classID, el)}
-      className={blockHighlightClass || undefined}
-    >
+    <>
+      {block.groupHeaders && block.groupHeaders.length > 0 && (
+        <div className={block.hasGroupBreak ? "mt-3" : undefined}>
+          {block.groupHeaders.map((header, index) => (
+            <div
+              key={index}
+              className="px-1 whitespace-pre-wrap break-words font-semibold text-emerald-800"
+            >
+              {header.line}
+            </div>
+          ))}
+        </div>
+      )}
+      <div
+        ref={(el) => registerClassRef(block.classID, el)}
+        className={blockHighlightClass || undefined}
+      >
       {block.metadataComments.map((comment, index) => (
         <div key={index} className="px-1 whitespace-pre-wrap break-words text-emerald-700">
           {comment}
@@ -246,7 +259,8 @@ function ClassProduction({
           )}
         </div>
       )}
-    </div>
+      </div>
+    </>
   );
 }
 

@@ -20,9 +20,18 @@ export type TextAlternative = {
   subsumed?: boolean;
 };
 
+export type TextGroupHeader = {
+  level: number;
+  key: string;
+  value: string;
+  line: string;
+};
+
 export type TextClassBlock = {
   classID: EGraphClassID;
   type?: string;
+  groupHeaders?: TextGroupHeader[];
+  hasGroupBreak?: boolean;
   metadataComments: string[];
   alternatives: TextAlternative[];
   multiline: boolean;
@@ -163,7 +172,8 @@ function formatNodeExpr(
 
 function formatClassMetadataComments(
   classData: EGraphClassData | undefined,
-  isRoot: boolean
+  isRoot: boolean,
+  excludedKeys?: ReadonlySet<string>
 ): string[] {
   const comments: string[] = [];
   if (isRoot) {
@@ -171,7 +181,7 @@ function formatClassMetadataComments(
   }
   if (classData) {
     for (const [key, value] of Object.entries(classData)) {
-      if (key === "type" || value === undefined) {
+      if (key === "type" || value === undefined || excludedKeys?.has(key)) {
         continue;
       }
       const raw = key === "" ? value : `${key}: ${value}`;
@@ -181,6 +191,77 @@ function formatClassMetadataComments(
     }
   }
   return comments;
+}
+
+function compareGroupValues(a: string, b: string): number {
+  const aTrim = a.trim();
+  const bTrim = b.trim();
+  const aNum = aTrim !== "" ? Number(aTrim) : NaN;
+  const bNum = bTrim !== "" ? Number(bTrim) : NaN;
+  const aIsNum = Number.isFinite(aNum);
+  const bIsNum = Number.isFinite(bNum);
+  if (aIsNum && bIsNum && aNum !== bNum) {
+    return aNum - bNum;
+  }
+  if (aIsNum !== bIsNum) {
+    return aIsNum ? -1 : 1;
+  }
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+
+/**
+ * Automatically detect hierarchical grouping keys from `class_data` in first-seen JSON key order.
+ * A key qualifies iff it is non-`type`, non-empty, single-line, present on every displayed class,
+ * repeats at least once, and greedily keeps the bucket count strictly below the class count.
+ */
+function detectGroupKeys(
+  orderedClasses: EGraphClassID[],
+  classData?: { [id: EGraphClassID]: EGraphClassData }
+): string[] {
+  if (!classData || orderedClasses.length <= 1) {
+    return [];
+  }
+  const keyOrder: string[] = [];
+  const seenKeys = new Set<string>();
+  for (const classID of orderedClasses) {
+    const data = classData[classID];
+    if (!data) {
+      continue;
+    }
+    for (const [key, value] of Object.entries(data)) {
+      if (key === "type" || key === "" || value === undefined || seenKeys.has(key)) {
+        continue;
+      }
+      seenKeys.add(key);
+      keyOrder.push(key);
+    }
+  }
+
+  const groupKeys: string[] = [];
+  for (const key of keyOrder) {
+    let allPresent = true;
+    const distinct = new Set<string>();
+    for (const classID of orderedClasses) {
+      const val = classData[classID]?.[key];
+      if (val === undefined || /[\r\n]/.test(val)) {
+        allPresent = false;
+        break;
+      }
+      distinct.add(val);
+    }
+    if (!allPresent || distinct.size >= orderedClasses.length) {
+      continue;
+    }
+    const candidate = [...groupKeys, key];
+    const buckets = new Set<string>();
+    for (const classID of orderedClasses) {
+      buckets.add(JSON.stringify(candidate.map((k) => classData[classID]![k])));
+    }
+    if (buckets.size < orderedClasses.length) {
+      groupKeys.push(key);
+    }
+  }
+  return groupKeys;
 }
 
 function formatNodeComment(node: EGraphNode): string | undefined {
@@ -234,17 +315,25 @@ export function formatEGraphBlocks(
 ): TextClassBlock[] {
   const { egraph, classToNodes, nodeToClass } = subgraph;
   const rootSet = new Set(egraph.root_eclasses || []);
-  const orderedClasses = orderClassesDFS(subgraph);
+  const orderedClasses = orderClassesDFS(subgraph).filter(
+    (classID) => (classToNodes.get(classID)?.length ?? 0) > 0
+  );
+  const groupKeys = detectGroupKeys(orderedClasses, egraph.class_data);
+  const excludedKeys = groupKeys.length > 0 ? new Set(groupKeys) : undefined;
   const blocks: TextClassBlock[] = [];
 
-  for (const classID of orderedClasses) {
+  const pushClassBlock = (
+    classID: EGraphClassID,
+    groupHeaders?: TextGroupHeader[],
+    hasGroupBreak?: boolean
+  ) => {
     const entries = classToNodes.get(classID) || [];
     if (entries.length === 0) {
-      continue;
+      return;
     }
     const classData = egraph.class_data?.[classID];
     const isRoot = rootSet.has(classID);
-    const metadataComments = formatClassMetadataComments(classData, isRoot);
+    const metadataComments = formatClassMetadataComments(classData, isRoot, excludedKeys);
 
     const alternatives: TextAlternative[] = entries.map(([nodeID, node]) => {
       const { expr, parts, referencedClasses } = formatNodeExpr(node, nodeToClass, syntax);
@@ -264,12 +353,67 @@ export function formatEGraphBlocks(
     blocks.push({
       classID,
       ...(classData?.type ? { type: classData.type } : {}),
+      ...(groupHeaders && groupHeaders.length > 0 ? { groupHeaders } : {}),
+      ...(hasGroupBreak ? { hasGroupBreak: true } : {}),
       metadataComments,
       alternatives,
       multiline,
     });
+  };
+
+  if (groupKeys.length === 0) {
+    for (const classID of orderedClasses) {
+      pushClassBlock(classID);
+    }
+    return blocks;
   }
 
+  // Hash count counts outward from the class: `#` is a single class, `##` is the innermost group,
+  // `###` is the next enclosing group, etc. (monotonic regardless of nesting depth).
+  const emitGroupLevel = (
+    classes: EGraphClassID[],
+    levelIdx: number,
+    pendingHeaders: TextGroupHeader[],
+    pendingBreak: boolean
+  ) => {
+    if (levelIdx >= groupKeys.length) {
+      classes.forEach((classID, idx) => {
+        pushClassBlock(
+          classID,
+          idx === 0 ? pendingHeaders : undefined,
+          idx === 0 ? pendingBreak : false
+        );
+      });
+      return;
+    }
+    const key = groupKeys[levelIdx];
+    const buckets = new Map<string, EGraphClassID[]>();
+    for (const classID of classes) {
+      const val = egraph.class_data![classID]![key]!;
+      let list = buckets.get(val);
+      if (!list) {
+        list = [];
+        buckets.set(val, list);
+      }
+      list.push(classID);
+    }
+    const sortedValues = [...buckets.keys()].sort(compareGroupValues);
+    const hashCount = groupKeys.length - levelIdx + 1;
+    const prefix = "#".repeat(hashCount);
+    sortedValues.forEach((value, idx) => {
+      const header: TextGroupHeader = {
+        level: hashCount,
+        key,
+        value,
+        line: `${prefix} ${key}: ${value}`,
+      };
+      const nextHeaders = idx === 0 ? [...pendingHeaders, header] : [header];
+      const nextBreak = levelIdx === 0 ? idx > 0 : idx === 0 ? pendingBreak : false;
+      emitGroupLevel(buckets.get(value)!, levelIdx + 1, nextHeaders, nextBreak);
+    });
+  };
+
+  emitGroupLevel(orderedClasses, 0, [], false);
   return blocks;
 }
 
@@ -278,6 +422,14 @@ export function blocksToPlainText(blocks: TextClassBlock[]): string {
   for (const block of blocks) {
     if (block.alternatives.length === 0) {
       continue;
+    }
+    if (block.hasGroupBreak) {
+      lines.push("");
+    }
+    if (block.groupHeaders) {
+      for (const header of block.groupHeaders) {
+        lines.push(header.line);
+      }
     }
     for (const comment of block.metadataComments) {
       lines.push(comment);
