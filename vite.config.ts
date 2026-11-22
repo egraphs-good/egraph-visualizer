@@ -1,7 +1,10 @@
 import { readFileSync } from "fs";
-import { resolve } from "path";
+import { createRequire } from "module";
+import { dirname, resolve } from "path";
 import { defineConfig, Plugin } from "vite";
 import react from "@vitejs/plugin-react";
+
+const require = createRequire(import.meta.url);
 
 function inlineLibavoidWasm(): Plugin {
   const virtualId = "virtual:libavoid-wasm";
@@ -13,7 +16,8 @@ function inlineLibavoidWasm(): Plugin {
     },
     load(id) {
       if (id === resolvedId) {
-        const wasmPath = resolve(__dirname, "node_modules/libavoid-js/dist/libavoid.wasm");
+        const libavoidEntry = require.resolve("libavoid-js");
+        const wasmPath = resolve(dirname(libavoidEntry), "libavoid.wasm");
         const base64 = readFileSync(wasmPath).toString("base64");
         return `export default "data:application/wasm;base64,${base64}";`;
       }
