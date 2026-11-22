@@ -43,6 +43,7 @@ function classLayoutOptions(extraSize: { width: number; height: number }): Recor
       ? {
           "elk.nodeSize.constraints": "MINIMUM_SIZE",
           "elk.nodeSize.minimum": `(${minWidth}, 0)`,
+          "elk.contentAlignment": "H_CENTER V_TOP",
         }
       : {}),
     // allow ports on e-class to be anywhere
