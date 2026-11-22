@@ -1,22 +1,22 @@
 {
   "nodes": {
     "//": {
-      "op": "/",
+      "op": "· / ·",
       "children": ["*", "2"],
       "eclass": "top"
     },
     "**": {
-      "op": "*",
+      "op": "· * ·",
       "eclass": "top",
       "children": ["a", "/"]
     },
     "*": {
-      "op": "*",
+      "op": "· * ·",
       "eclass": "middle",
       "children": ["a", "2"]
     },
     "<<": {
-      "op": "<<",
+      "op": "· << ·",
       "eclass": "middle",
       "children": ["a", "1"]
     },
@@ -33,7 +33,7 @@
       "eclass": "right"
     },
     "/": {
-      "op": "/",
+      "op": "· / ·",
       "eclass": "right",
       "children": ["2", "2"]
     }
