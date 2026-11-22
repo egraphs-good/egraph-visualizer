@@ -540,11 +540,11 @@ export function Visualizer({ egraphs, height = null, resize = false }: { egraphs
 
   return (
     <div className={`twp w-full relative ${resize ? "resize-y" : ""}`} style={{ height: height || "100%" }} ref={setRootElem}>
-      {/* Hidden elements to measure node and extra class_data sizes */}
+      {/* Hidden elements to measure node and extra class_data sizes independently */}
       <div className="invisible absolute">
         <ENode outerRef={setOuterElem} innerRef={setInnerElem} />
-        <div ref={setExtraElem} />
       </div>
+      <div className="invisible absolute" ref={setExtraElem} />
       <SelectSider length={egraphs.length} onSelect={onSelect} selected={actualSelected} />
       {outerElem && innerElem && extraElem && aspectRatio && (
         <LayoutFlow
