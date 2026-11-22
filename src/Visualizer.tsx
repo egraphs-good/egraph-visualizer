@@ -9,6 +9,7 @@ import {
   Bars2Icon,
   ChevronRightIcon,
   ClipboardDocumentListIcon,
+  CodeBracketIcon,
   CogIcon,
 } from "@heroicons/react/24/outline";
 
@@ -47,10 +48,12 @@ import {
 } from "./react-aria-components-tailwind-starter/src/menu";
 import { useCopyToClipboard } from "./react-aria-components-tailwind-starter/src/hooks/use-clipboard";
 import { keepPreviousData, QueryClientProvider, useQuery } from "@tanstack/react-query";
-import { FlowClass, FlowEdge, FlowNode, layoutGraph, PreviousLayout, SelectedNodes } from "./layout";
+import { FilteredEGraph, FlowClass, FlowEdge, FlowNode, layoutGraph, PreviousLayout, SelectedNodes } from "./layout";
 import { queryClient } from "./queryClient";
 import { Loading } from "./Loading";
 import { Slider, SliderOutput, SliderTack } from "./react-aria-components-tailwind-starter/src/slider";
+import { TextPanel } from "./TextPanel";
+import { blocksToPlainText, formatEGraphBlocks, TextSyntax } from "./text";
 
 function EClassExtra({ extra }: { extra?: { [key: string]: string } }) {
   const entries = Object.entries(extra || {});
@@ -192,71 +195,84 @@ const proOptions = { hideAttribution: true };
 function Rendering({
   nodes: initialNodes,
   edges: initialEdges,
-  selectedNodes: filteredNodes,
+  subgraph,
   nodeToEdges,
   edgeToNodes,
   elkJSON,
+  highlightedNodes,
+  setHighlightedNodes,
+  highlightedEdges,
+  setHighlightedEdges,
   useInteractiveLayout,
   setUseInteractiveLayout,
   mergeEdges,
   setMergeEdges,
+  showText,
+  setShowText,
+  textSyntax,
+  setTextSyntax,
 }: {
   nodes: (FlowNode | FlowClass)[];
   edges: FlowEdge[];
-  selectedNodes: SelectedNodes;
+  subgraph: FilteredEGraph;
   nodeToEdges: Map<string, string[]>;
   edgeToNodes: Map<string, string[]>;
   elkJSON: string;
+  highlightedNodes: Set<string>;
+  setHighlightedNodes: (value: Set<string>) => void;
+  highlightedEdges: Set<string>;
+  setHighlightedEdges: (value: Set<string>) => void;
   useInteractiveLayout: boolean;
   setUseInteractiveLayout: (value: boolean) => void;
   mergeEdges: boolean;
   setMergeEdges: (value: boolean) => void;
+  showText: boolean;
+  setShowText: (value: boolean) => void;
+  textSyntax: TextSyntax;
+  setTextSyntax: (value: TextSyntax) => void;
 }) {
-  const [selectedEdges, setSelectedEdges] = useState<Set<string>>(new Set());
-  const [selectedNodes, setSelectedNodes] = useState<Set<string>>(new Set());
-
   // Trigger this when we want to skip the next fitView, for example when we change selection
   const skipNextFitRef = useRef(false);
 
   const nodes = useMemo(
-    () => initialNodes.map((node) => ({ ...node, selected: selectedNodes.has(node.id) })),
-    [initialNodes, selectedNodes]
+    () => initialNodes.map((node) => ({ ...node, selected: highlightedNodes.has(node.id) })),
+    [initialNodes, highlightedNodes]
   );
   const edges = useMemo(
-    () => initialEdges.map((edge) => ({ ...edge, selected: selectedEdges.has(edge.id) })),
-    [initialEdges, selectedEdges]
+    () => initialEdges.map((edge) => ({ ...edge, selected: highlightedEdges.has(edge.id) })),
+    [initialEdges, highlightedEdges]
   );
 
   // Handle node/edge selection
   const onNodesChange = useCallback(
     (changes: NodeChange<FlowNode | FlowClass>[]) => {
-      const newSelectedNodes = processSelectionChanges(changes, selectedNodes);
+      const newSelectedNodes = processSelectionChanges(changes, highlightedNodes);
       if (newSelectedNodes) {
-        const connectedEdges = [...newSelectedNodes].flatMap((node) => nodeToEdges.get(node)!);
-        setSelectedNodes(newSelectedNodes);
-        setSelectedEdges(new Set(connectedEdges));
+        const connectedEdges = [...newSelectedNodes].flatMap((node) => nodeToEdges.get(node) ?? []);
+        setHighlightedNodes(newSelectedNodes);
+        setHighlightedEdges(new Set(connectedEdges));
         skipNextFitRef.current = true;
       }
     },
-    [selectedNodes, setSelectedNodes, nodeToEdges, setSelectedEdges]
+    [highlightedNodes, setHighlightedNodes, nodeToEdges, setHighlightedEdges]
   );
   const onEdgesChange = useCallback(
     (changes: EdgeChange<FlowEdge>[]) => {
-      const newSelectedEdges = processSelectionChanges(changes, selectedEdges);
+      const newSelectedEdges = processSelectionChanges(changes, highlightedEdges);
       if (newSelectedEdges) {
-        const connectedNodes = [...newSelectedEdges].flatMap((edge) => edgeToNodes.get(edge)!);
-        setSelectedNodes(new Set(connectedNodes));
-        setSelectedEdges(newSelectedEdges);
+        const connectedNodes = [...newSelectedEdges].flatMap((edge) => edgeToNodes.get(edge) ?? []);
+        setHighlightedNodes(new Set(connectedNodes));
+        setHighlightedEdges(newSelectedEdges);
         skipNextFitRef.current = true;
       }
     },
-    [selectedEdges, setSelectedEdges, edgeToNodes, setSelectedNodes]
+    [highlightedEdges, setHighlightedEdges, edgeToNodes, setHighlightedNodes]
   );
 
   const selectNode = useContext(SetSelectedNodeContext)!;
   const unselectNode = useCallback(() => selectNode(null), [selectNode]);
 
-  // Re-fit when initial nodes/edges change, but not when selection changes
+  // Re-fit when initial nodes/edges change or when toggling the text drawer
   const reactFlow = useReactFlow();
   const nodeInitialized = useNodesInitialized();
   useEffect(() => {
@@ -269,8 +285,44 @@ function Rendering({
     }
   }, [nodeInitialized, reactFlow, skipNextFitRef]);
 
+  const prevShowTextRef = useRef(showText);
+  useEffect(() => {
+    if (prevShowTextRef.current !== showText) {
+      if (nodeInitialized) {
+        const timer = window.setTimeout(() => {
+          prevShowTextRef.current = showText;
+          reactFlow.fitView({ padding: 0.1, duration: 250 });
+        }, 50);
+        return () => window.clearTimeout(timer);
+      }
+      prevShowTextRef.current = showText;
+    }
+  }, [showText, nodeInitialized, reactFlow]);
+
   const [isOpen, setOpen] = useState(false);
-  const clipboard = useCopyToClipboard();
+  const textClipboard = useCopyToClipboard();
+  const jsonClipboard = useCopyToClipboard();
+  const elkClipboard = useCopyToClipboard();
+  const handleToggleShowText = useCallback(() => setShowText(!showText), [setShowText, showText]);
+  const handleToggleTextSyntax = useCallback(
+    () => setTextSyntax(textSyntax === "call" ? "sexpr" : "call"),
+    [setTextSyntax, textSyntax]
+  );
+  const handleToggleInteractiveLayout = useCallback(
+    () => setUseInteractiveLayout(!useInteractiveLayout),
+    [setUseInteractiveLayout, useInteractiveLayout]
+  );
+  const handleToggleMergeEdges = useCallback(() => setMergeEdges(!mergeEdges), [setMergeEdges, mergeEdges]);
+  const handleCopyText = useCallback(
+    () => textClipboard.copy(blocksToPlainText(formatEGraphBlocks(subgraph, textSyntax))),
+    [subgraph, textSyntax, textClipboard]
+  );
+  const handleCopyJson = useCallback(
+    () => jsonClipboard.copy(JSON.stringify(subgraph.egraph, null, 2)),
+    [subgraph.egraph, jsonClipboard]
+  );
+  const handleCopyElk = useCallback(() => elkClipboard.copy(elkJSON), [elkJSON, elkClipboard]);
+
   return (
     <ReactFlow
       nodes={nodes}
@@ -288,13 +340,13 @@ function Rendering({
       defaultEdgeOptions={defaultEdgeOptions}
       proOptions={proOptions}
     >
-      {filteredNodes.length > 0 ? (
+      {subgraph.hasActiveFilter ? (
         <Panel position="top-center">
           <button
-            className="rounded bg-white px-2 py-1 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 hover:shadow-md hover:ring-gray-400 transition-all duration-200"
+            className="rounded bg-white px-2 py-1 text-xs font-medium shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 hover:shadow-md hover:ring-gray-400 transition-all duration-200"
             onClick={unselectNode}
           >
-            Reset filter
+            Reset filter ({subgraph.classToNodes.size} classes)
           </button>
         </Panel>
       ) : (
@@ -309,35 +361,74 @@ function Rendering({
           </MenuButton>
           <MenuPopover placement="bottom right" isOpen={isOpen} onOpenChange={setOpen}>
             <Menu>
-              <MenuItem
-                onAction={useCallback(
-                  () => setUseInteractiveLayout(!useInteractiveLayout),
-                  [setUseInteractiveLayout, useInteractiveLayout]
-                )}
-                className="cursor-pointer"
-              >
+              <MenuItem onAction={handleToggleShowText} className="cursor-pointer">
+                <AccessibleIcon>
+                  <CodeBracketIcon />
+                </AccessibleIcon>
+                <MenuItemLabel>Text view</MenuItemLabel>
+                <MenuItemDescription>
+                  {showText ? "Hide synchronized BNF text view" : "Show synchronized BNF text view below graph"}
+                </MenuItemDescription>
+              </MenuItem>
+              <MenuItem onAction={handleToggleTextSyntax} className="cursor-pointer">
+                <AccessibleIcon>
+                  <CodeBracketIcon />
+                </AccessibleIcon>
+                <MenuItemLabel>Syntax: {textSyntax === "sexpr" ? "S-expr" : "Call"}</MenuItemLabel>
+                <MenuItemDescription>
+                  {textSyntax === "sexpr" ? "(op a b) · switch to Call op(a, b)" : "op(a, b) · switch to S-expr (op a b)"}
+                </MenuItemDescription>
+              </MenuItem>
+              <MenuSeparator />
+              <MenuItem onAction={handleToggleInteractiveLayout} className="cursor-pointer">
                 <AccessibleIcon>{useInteractiveLayout ? <ArrowUturnRightIcon /> : <ArrowLongRightIcon />}</AccessibleIcon>
                 <MenuItemLabel>Interactive layout</MenuItemLabel>
                 <MenuItemDescription>
                   {useInteractiveLayout ? "Layout independently of previous positions" : "Layout interactively based on previous positions"}
                 </MenuItemDescription>
               </MenuItem>
-              <MenuItem onAction={useCallback(() => setMergeEdges(!mergeEdges), [setMergeEdges, mergeEdges])} className="cursor-pointer">
+              <MenuItem onAction={handleToggleMergeEdges} className="cursor-pointer">
                 <AccessibleIcon>{mergeEdges ? <ChevronRightIcon /> : <Bars2Icon />}</AccessibleIcon>
                 <MenuItemLabel>Merge edges</MenuItemLabel>
                 <MenuItemDescription>{mergeEdges ? "Seperate ports for incoming edges" : "Merge all incoming edges"}</MenuItemDescription>
               </MenuItem>
               <MenuSeparator />
-              <MenuItem onAction={useCallback(() => clipboard.copy(elkJSON), [elkJSON, clipboard])} className="cursor-pointer">
+              <MenuItem onAction={handleCopyText} className="cursor-pointer">
+                <AccessibleIcon>
+                  <ClipboardDocumentListIcon />
+                </AccessibleIcon>
+                <MenuItemLabel>Copy text</MenuItemLabel>
+                <MenuItemDescription>
+                  {textClipboard.copied
+                    ? "Copied BNF text to clipboard"
+                    : textClipboard.error
+                    ? `Failed to copy text to clipboard ${textClipboard.error.message}`
+                    : "Copy BNF text to clipboard"}
+                </MenuItemDescription>
+              </MenuItem>
+              <MenuItem onAction={handleCopyJson} className="cursor-pointer">
+                <AccessibleIcon>
+                  <ClipboardDocumentListIcon />
+                </AccessibleIcon>
+                <MenuItemLabel>Copy JSON</MenuItemLabel>
+                <MenuItemDescription>
+                  {jsonClipboard.copied
+                    ? "Copied e-graph JSON to clipboard"
+                    : jsonClipboard.error
+                    ? `Failed to copy e-graph JSON to clipboard ${jsonClipboard.error.message}`
+                    : "Copy e-graph JSON to clipboard"}
+                </MenuItemDescription>
+              </MenuItem>
+              <MenuItem onAction={handleCopyElk} className="cursor-pointer">
                 <AccessibleIcon>
                   <ClipboardDocumentListIcon />
                 </AccessibleIcon>
                 <MenuItemLabel>Copy ELK</MenuItemLabel>
                 <MenuItemDescription>
-                  {clipboard.copied
+                  {elkClipboard.copied
                     ? "Copied ELK JSON to clipboard"
-                    : clipboard.error
-                    ? `Failed to copy ELK JSON to clipboard ${clipboard.error.message}`
+                    : elkClipboard.error
+                    ? `Failed to copy ELK JSON to clipboard ${elkClipboard.error.message}`
                     : "Copy ELK JSON to clipboard"}
                 </MenuItemDescription>
               </MenuItem>
@@ -360,6 +451,10 @@ function LayoutFlow({
   extraElem,
   aspectRatio,
   firstEgraph,
+  showText,
+  setShowText,
+  textSyntax,
+  setTextSyntax,
 }: {
   egraph: string;
   outerElem: HTMLDivElement;
@@ -367,10 +462,18 @@ function LayoutFlow({
   extraElem: HTMLDivElement;
   aspectRatio: number;
   firstEgraph: string;
+  showText: boolean;
+  setShowText: (value: boolean) => void;
+  textSyntax: TextSyntax;
+  setTextSyntax: (value: TextSyntax) => void;
 }) {
   const [useInteractiveLayout, setUseInteractiveLayout] = useState(false);
   const [mergeEdges, setMergeEdges] = useState(false);
+  const [highlightedNodes, setHighlightedNodes] = useState<Set<string>>(new Set());
+  const [highlightedEdges, setHighlightedEdges] = useState<Set<string>>(new Set());
+  const [highlightScrollSeq, setHighlightScrollSeq] = useState(0);
   const previousLayoutRef = useRef<PreviousLayout | null>(null);
+  const nodeToClassRef = useRef<Map<string, string> | null>(null);
   // e-class ID we have currently selected, store the first egraph string as well so we know if this selection is outdated,
   // if our whole list of egraphs changes, but keep the selection if we have simply added a new egraph on
   const [selectedNodesWithEGraph, setSelectedNodesWithEGraph] = useState<{selected: SelectedNodes, firstEgraph: string }>({selected: [], firstEgraph});
@@ -398,6 +501,27 @@ function LayoutFlow({
         if (index >= 0) {
           newSelected.splice(index, 1);
         } else {
+          const nodeToClass = nodeToClassRef.current;
+          if (nodeToClass) {
+            if (node.type === "node") {
+              // Refining an e-class filter to one of its e-nodes replaces the redundant class filter
+              const owningClass = nodeToClass.get(node.id);
+              if (owningClass !== undefined) {
+                for (let i = newSelected.length - 1; i >= 0; i--) {
+                  if (newSelected[i].type === "class" && newSelected[i].id === owningClass) {
+                    newSelected.splice(i, 1);
+                  }
+                }
+              }
+            } else {
+              // Widening to a whole e-class clears any per-node filters inside that e-class
+              for (let i = newSelected.length - 1; i >= 0; i--) {
+                if (newSelected[i].type === "node" && nodeToClass.get(newSelected[i].id) === node.id) {
+                  newSelected.splice(i, 1);
+                }
+              }
+            }
+          }
           newSelected.push(node);
         }
         return { selected: newSelected, firstEgraph };
@@ -467,8 +591,121 @@ function LayoutFlow({
   useEffect(() => {
     if (layoutQuery.status === "success") {
       previousLayoutRef.current = layoutQuery.data.layout;
+      nodeToClassRef.current = layoutQuery.data.subgraph.nodeToClass;
     }
   }, [layoutQuery.status, layoutQuery.data]);
+
+  const handleSelectFlowNode = useCallback(
+    (flowID: string) => {
+      const connectedEdges = layoutQuery.data?.nodeToEdges.get(flowID) ?? [];
+      setHighlightedNodes(new Set([flowID]));
+      setHighlightedEdges(new Set(connectedEdges));
+      setHighlightScrollSeq((seq) => seq + 1);
+    },
+    [layoutQuery.data]
+  );
+  const handleSelectClass = useCallback(
+    (classID: string) => {
+      handleSelectFlowNode(`class-${classID}`);
+    },
+    [handleSelectFlowNode]
+  );
+  const handleSelectNode = useCallback(
+    (nodeID: string) => {
+      handleSelectFlowNode(`node-${nodeID}`);
+    },
+    [handleSelectFlowNode]
+  );
+  const handleClearSelection = useCallback(() => {
+    setHighlightedNodes((prev) => (prev.size === 0 ? prev : new Set()));
+    setHighlightedEdges((prev) => (prev.size === 0 ? prev : new Set()));
+  }, []);
+  const handleFilterClass = useCallback(
+    (classID: string) => {
+      toggleSelectedNode({ type: "class", id: classID });
+    },
+    [toggleSelectedNode]
+  );
+  const handleFilterNode = useCallback(
+    (nodeID: string) => {
+      toggleSelectedNode({ type: "node", id: nodeID });
+    },
+    [toggleSelectedNode]
+  );
+  const handleCloseText = useCallback(() => setShowText(false), [setShowText]);
+
+  const splitContainerRef = useRef<HTMLDivElement | null>(null);
+  const [textHeightRatio, setTextHeightRatio] = useState(0.38);
+  const [isResizingSplit, setIsResizingSplit] = useState(false);
+  const resizeCleanupRef = useRef<(() => void) | null>(null);
+
+  useEffect(() => {
+    return () => {
+      resizeCleanupRef.current?.();
+    };
+  }, []);
+
+  const handleSplitPointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.button !== 0) {
+      return;
+    }
+    const container = splitContainerRef.current;
+    if (!container) {
+      return;
+    }
+    e.preventDefault();
+    resizeCleanupRef.current?.();
+    setIsResizingSplit(true);
+    const prevCursor = document.body.style.cursor;
+    const prevUserSelect = document.body.style.userSelect;
+    document.body.style.cursor = "row-resize";
+    document.body.style.userSelect = "none";
+
+    const updateRatio = (clientY: number) => {
+      const rect = container.getBoundingClientRect();
+      if (rect.height <= 0) {
+        return;
+      }
+      const rawRatio = (rect.bottom - clientY) / rect.height;
+      setTextHeightRatio(Math.min(0.75, Math.max(0.15, rawRatio)));
+    };
+
+    const handlePointerMove = (moveEvent: PointerEvent) => {
+      updateRatio(moveEvent.clientY);
+    };
+    const cleanup = () => {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", cleanup);
+      window.removeEventListener("pointercancel", cleanup);
+      document.body.style.cursor = prevCursor;
+      document.body.style.userSelect = prevUserSelect;
+      setIsResizingSplit(false);
+      resizeCleanupRef.current = null;
+    };
+
+    resizeCleanupRef.current = cleanup;
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", cleanup);
+    window.addEventListener("pointercancel", cleanup);
+    updateRatio(e.clientY);
+  }, []);
+
+  const handleSplitDoubleClick = useCallback(() => {
+    setTextHeightRatio(0.38);
+  }, []);
+
+  const handleSplitKeyDown = useCallback((e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setTextHeightRatio((r) => Math.min(0.75, Math.round((r + 0.05) * 100) / 100));
+    } else if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setTextHeightRatio((r) => Math.max(0.15, Math.round((r - 0.05) * 100) / 100));
+    } else if (e.key === "Home") {
+      e.preventDefault();
+      setTextHeightRatio(0.38);
+    }
+  }, []);
 
   if (layoutQuery.isError) {
     return <div className="p-4">Error: {layoutQuery.error.message}</div>;
@@ -477,28 +714,82 @@ function LayoutFlow({
     return <Loading />;
   }
 
-  const { nodes, edges, elkJSON, nodeToEdges, edgeToNodes } = layoutQuery.data;
+  const { nodes, edges, elkJSON, nodeToEdges, edgeToNodes, subgraph } = layoutQuery.data;
 
   return (
-    <>
-      {layoutQuery.isFetching ? <Loading /> : <></>}
-      <SetSelectedNodeContext.Provider value={toggleSelectedNode}>
-        <ReactFlowProvider>
-          <Rendering
-            nodes={nodes}
-            edges={edges}
-            nodeToEdges={nodeToEdges}
-            edgeToNodes={edgeToNodes}
-            selectedNodes={selectedNodes}
-            elkJSON={elkJSON}
-            useInteractiveLayout={useInteractiveLayout}
-            setUseInteractiveLayout={setUseInteractiveLayout}
-            mergeEdges={mergeEdges}
-            setMergeEdges={setMergeEdges}
-          />
-        </ReactFlowProvider>
-      </SetSelectedNodeContext.Provider>
-    </>
+    <div ref={splitContainerRef} className="flex flex-col h-full w-full">
+      <div className="flex-1 min-h-0 relative">
+        {layoutQuery.isFetching ? <Loading /> : <></>}
+        <SetSelectedNodeContext.Provider value={toggleSelectedNode}>
+          <ReactFlowProvider>
+            <Rendering
+              nodes={nodes}
+              edges={edges}
+              subgraph={subgraph}
+              nodeToEdges={nodeToEdges}
+              edgeToNodes={edgeToNodes}
+              elkJSON={elkJSON}
+              highlightedNodes={highlightedNodes}
+              setHighlightedNodes={setHighlightedNodes}
+              highlightedEdges={highlightedEdges}
+              setHighlightedEdges={setHighlightedEdges}
+              useInteractiveLayout={useInteractiveLayout}
+              setUseInteractiveLayout={setUseInteractiveLayout}
+              mergeEdges={mergeEdges}
+              setMergeEdges={setMergeEdges}
+              showText={showText}
+              setShowText={setShowText}
+              textSyntax={textSyntax}
+              setTextSyntax={setTextSyntax}
+            />
+          </ReactFlowProvider>
+        </SetSelectedNodeContext.Provider>
+      </div>
+      {showText && (
+        <>
+          <div
+            role="separator"
+            aria-orientation="horizontal"
+            aria-label="Resize graph and text view"
+            aria-valuemin={15}
+            aria-valuemax={75}
+            aria-valuenow={Math.round(textHeightRatio * 100)}
+            tabIndex={0}
+            title="Drag to resize · Double-click to reset"
+            onPointerDown={handleSplitPointerDown}
+            onDoubleClick={handleSplitDoubleClick}
+            onKeyDown={handleSplitKeyDown}
+            className={`group relative h-2 shrink-0 cursor-row-resize select-none touch-none border-t border-gray-200 flex items-center justify-center transition-colors ${
+              isResizingSplit ? "bg-indigo-50 border-indigo-300" : "bg-gray-50/70 hover:bg-gray-100"
+            }`}
+          >
+            <div
+              className={`h-0.5 w-8 rounded-full transition-colors ${
+                isResizingSplit ? "bg-indigo-500" : "bg-gray-300 group-hover:bg-gray-500"
+              }`}
+            />
+          </div>
+          <div
+            className="shrink-0 min-h-[80px] bg-white overflow-hidden"
+            style={{ height: `${(textHeightRatio * 100).toFixed(2)}%` }}
+          >
+            <TextPanel
+              subgraph={subgraph}
+              syntax={textSyntax}
+              selectedNodes={selectedNodes}
+              highlightedNodes={highlightedNodes}
+              highlightScrollSeq={highlightScrollSeq}
+              onSelectClass={handleSelectClass}
+              onSelectNode={handleSelectNode}
+              onClearSelection={handleClearSelection}
+              onFilterClass={handleFilterClass}
+              onFilterNode={handleFilterNode}
+              onClose={handleCloseText}
+            />
+          </div>
+        </>
+      )}
+    </div>
   );
 }
 
@@ -533,13 +824,40 @@ function SelectSider({ length, onSelect, selected }: { length: number; onSelect:
   );
 }
 
-export function Visualizer({ egraphs, height = null, resize = false }: { egraphs: string[]; height?: string | null; resize?: boolean }) {
+export type MountOptions = {
+  showText?: boolean;
+  textSyntax?: TextSyntax;
+};
+
+export function Visualizer({
+  egraphs,
+  height = null,
+  resize = false,
+  showText: initialShowText = false,
+  textSyntax: initialTextSyntax = "call",
+}: {
+  egraphs: string[];
+  height?: string | null;
+  resize?: boolean;
+  showText?: boolean;
+  textSyntax?: TextSyntax;
+}) {
   const [rootElem, setRootElem] = useState<HTMLDivElement | null>(null);
 
   const [outerElem, setOuterElem] = useState<HTMLDivElement | null>(null);
   const [innerElem, setInnerElem] = useState<HTMLDivElement | null>(null);
   const [extraElem, setExtraElem] = useState<HTMLDivElement | null>(null);
+  const [showText, setShowText] = useState(initialShowText);
+  const [textSyntax, setTextSyntax] = useState<TextSyntax>(initialTextSyntax);
   const aspectRatio = rootElem ? rootElem.clientWidth / rootElem.clientHeight : null;
+
+  useEffect(() => {
+    setShowText(initialShowText);
+  }, [initialShowText]);
+
+  useEffect(() => {
+    setTextSyntax(initialTextSyntax);
+  }, [initialTextSyntax]);
 
   // If we are at null, then use the last item in the list
   // if the last selection was for a list of egraphs that no longer exists, then use the last item in the list
@@ -568,6 +886,10 @@ export function Visualizer({ egraphs, height = null, resize = false }: { egraphs
           outerElem={outerElem}
           innerElem={innerElem}
           extraElem={extraElem}
+          showText={showText}
+          setShowText={setShowText}
+          textSyntax={textSyntax}
+          setTextSyntax={setTextSyntax}
         />
       )}
     </div>
@@ -590,7 +912,13 @@ export function render({ model, el }: { el: HTMLElement; model: AnyModel }) {
   // };
   root.render(
     <QueryClientProvider client={queryClient}>
-      <Visualizer egraphs={model.get("egraphs")} height="600px" resize />
+      <Visualizer
+        egraphs={model.get("egraphs")}
+        showText={model.get("show_text")}
+        textSyntax={model.get("text_syntax")}
+        height="600px"
+        resize
+      />
     </QueryClientProvider>
   );
 
@@ -604,12 +932,16 @@ export function render({ model, el }: { el: HTMLElement; model: AnyModel }) {
 /// Call `render` to render a new list of egraphs
 /// Call `unmount` to unmount the visualizer
 // eslint-disable-next-line react-refresh/only-export-components
-export function mount(element: HTMLElement): { render: (egraphs: string[]) => void; unmount: () => void } {
+export function mount(
+  element: HTMLElement,
+  options?: MountOptions
+): { render: (egraphs: string[], renderOptions?: MountOptions) => void; unmount: () => void } {
   const root = createRoot(element);
-  function render(egraphs: string[]) {
+  function render(egraphs: string[], renderOptions?: MountOptions) {
+    const merged = { ...options, ...renderOptions };
     root.render(
       <QueryClientProvider client={queryClient}>
-        <Visualizer egraphs={egraphs} />
+        <Visualizer egraphs={egraphs} showText={merged.showText} textSyntax={merged.textSyntax} />
       </QueryClientProvider>
     );
   }
