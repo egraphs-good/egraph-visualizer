@@ -1,9 +1,9 @@
-import { Fragment, useEffect, useMemo, useRef } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef } from "react";
 import { FunnelIcon } from "@heroicons/react/24/outline";
 import { EGraphClassID, EGraphNodeID, FilteredEGraph, SelectedNodes } from "./layout";
 import { blocksToPlainText, formatEGraphBlocks, TextAlternative, TextClassBlock, TextSyntax } from "./text";
 import { Button } from "./react-aria-components-tailwind-starter/src/button";
-import { Clipboard } from "./react-aria-components-tailwind-starter/src/clipboard";
+import { useCopyToClipboard } from "./react-aria-components-tailwind-starter/src/hooks/use-clipboard";
 import { CopyIcon, XIcon } from "./react-aria-components-tailwind-starter/src/icons";
 
 function hasTextSelection(): boolean {
@@ -330,25 +330,24 @@ export function TextPanel({
     }
   }, [highlightedNodes, highlightScrollSeq]);
 
+  const clipboard = useCopyToClipboard();
+  const handleCopyText = useCallback(() => clipboard.copy(plainText), [clipboard, plainText]);
+
   return (
     <div className="relative h-full w-full bg-white text-gray-900 select-text">
       <div className="absolute top-1.5 right-2 z-10 flex items-center gap-0.5 rounded bg-white/85 backdrop-blur-sm">
-        <Clipboard>
-          {({ copied, copy }) => (
-            <Button
-              size="sm"
-              variant="plain"
-              isIconOnly
-              onPress={() => copy(plainText)}
-              aria-label={copied ? "Copied text" : "Copy text"}
-              className="size-6 sm:size-6 p-0 text-gray-500 hover:text-gray-900"
-            >
-              <span title={copied ? "Copied" : "Copy BNF text"}>
-                <CopyIcon className="size-3.5" />
-              </span>
-            </Button>
-          )}
-        </Clipboard>
+        <Button
+          size="sm"
+          variant="plain"
+          isIconOnly
+          onPress={handleCopyText}
+          aria-label={clipboard.copied ? "Copied text" : "Copy text"}
+          className="size-6 sm:size-6 p-0 text-gray-500 hover:text-gray-900"
+        >
+          <span title={clipboard.copied ? "Copied" : "Copy BNF text"}>
+            <CopyIcon className="size-3.5" />
+          </span>
+        </Button>
         <Button
           size="sm"
           variant="plain"
