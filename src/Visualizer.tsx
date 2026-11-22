@@ -406,14 +406,18 @@ function LayoutFlow({
     [setSelectedNodesWithEGraph, firstEgraph]
   );
 
+  const extraSizeCacheRef = useRef(new Map<string, { width: number; height: number }>());
   const [extraMeasure, setExtraMeasure] = useState<{ container: HTMLDivElement; root: Root } | null>(null);
   useEffect(() => {
+    const cache = extraSizeCacheRef.current;
+    cache.clear();
     const container = document.createElement("div");
     container.className = "w-max max-w-96";
     extraElem.replaceChildren(container);
     const root = createRoot(container);
     setExtraMeasure({ container, root });
     return () => {
+      cache.clear();
       setExtraMeasure(null);
       container.remove();
       queueMicrotask(() => root.unmount());
@@ -432,10 +436,20 @@ function LayoutFlow({
       if (!extraMeasure || Object.keys(extra).length === 0) {
         return { width: 0, height: 0 };
       }
+      const key = JSON.stringify(extra);
+      const cached = extraSizeCacheRef.current.get(key);
+      if (cached) {
+        return cached;
+      }
       flushSync(() => {
         extraMeasure.root.render(<EClassExtra extra={extra} />);
       });
-      return extraMeasure.container.getBoundingClientRect();
+      const rect = extraMeasure.container.getBoundingClientRect();
+      const size = { width: rect.width, height: rect.height };
+      if (size.width > 0 || size.height > 0) {
+        extraSizeCacheRef.current.set(key, size);
+      }
+      return size;
     },
     [extraMeasure]
   );
